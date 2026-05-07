@@ -1,0 +1,96 @@
+{
+  "events": [
+    {
+      "id": 1,
+      "loc": "Lagos, Nigeria",
+      "date": "October 12-14, 2026",
+      "title": "Annual Minister Conference"
+    },
+    {
+      "id": 2,
+      "loc": "Google Meet",
+      "date": "Every Friday",
+      "title": "Virtual Fellowship & Prayer"
+    },
+    {
+      "id": 3,
+      "loc": "Google Meet",
+      "date": "August 5, 2026",
+      "title": "Leadership & Growth Workshop"
+    }
+  ],
+  "heroImage": "https://res.cloudinary.com/dlg60ept3/image/upload/v1778142478/assymog_uploads/sy5htj55xumizpzecmhs.jpg",
+  "logoImage": "https://res.cloudinary.com/dlg60ept3/image/upload/v1778142439/assymog_uploads/fxrm6jxmzlghcz2lxo1b.png",
+  "licensePrice": 15000,
+  "testimonials": [
+    {
+      "id": 1,
+      "name": "Pastor Solomon",
+      "text": "ASYMOG has strengthened my calling and grounded me in truth. The fellowship is unmatched.",
+      "image": "https://res.cloudinary.com/dlg60ept3/image/upload/v1778155739/assymog_uploads/johpi8d58hbluscuxbky.jpg"
+    },
+    {
+      "id": 2,
+      "name": "Pastor. Siminiye",
+      "text": "This association brought unity and clarity to my ministry. We are stronger together.",
+      "image": "https://res.cloudinary.com/dlg60ept3/image/upload/v1778155785/assymog_uploads/qgpe05nuxoverioxdfbo.jpg"
+    },
+    {
+      "id": 3,
+      "name": "Pastor Oluwasegun",
+      "text": "The monthly roll-ups and conferences have totally transformed my approach to leadership and pastoring.",
+      "image": "https://utgwqjmxelinswelqgwg.supabase.co/storage/v1/object/public/App_files/663a9w3wbt8_1778155879103.jpg"
+    },
+    {
+      "id": 4,
+      "name": "Pastor Sunday",
+      "text": "A family of ministers where you are truly supported. Getting my ministerial license here was seamless.",
+      "image": "https://res.cloudinary.com/dlg60ept3/image/upload/v1778156023/assymog_uploads/g1eiasyqovpus8wifyvr.jpg"
+    },
+    {
+      "id": 5,
+      "name": "Prophetess Deborah",
+      "text": "The cooperative hand has been a financial lifesaver for my ministry. ASYMOG truly cares for its own.",
+      "image": "https://i.pravatar.cc/150?img=32"
+    },
+    {
+      "id": 6,
+      "name": "Bishop Emmanuel",
+      "text": "Integrity and transparency are the hallmarks of this association. I'm proud to be one of the leaders.",
+      "image": "https://i.pravatar.cc/150?img=12"
+    }
+  ],
+  "presidentName": "Bishop Emmanuel",
+  "flutterwaveKey": "",
+  "presidentImage": "https://res.cloudinary.com/dlg60ept3/image/upload/v1778142540/assymog_uploads/sxhxscrfbfzzhba2dr4q.png",
+  "regularMeetings": [
+    {
+      "id": 1,
+      "meta": "Time: 10:00 AM Prompt",
+      "title": "Monthly General Meeting",
+      "venue": "Google Meet (Online Link provided in Member Portal)",
+      "schedule": "First Thursday of every month"
+    },
+    {
+      "id": 2,
+      "meta": "Time: 7:00 PM",
+      "title": "Executive Meeting",
+      "venue": "Google Meet (Direct Link in Executive Portal)",
+      "schedule": "Last Tuesday of every month"
+    },
+    {
+      "id": 3,
+      "meta": "A 3-day strategic annual gathering.",
+      "title": "Annual Ministers Conference",
+      "venue": "Combined: Physical (Aboru, Lagos) & Google Meet",
+      "schedule": "Every 3rd week of November"
+    }
+  ],
+  "certificatePrice": 5000,
+  "monthlyDuesAmount": 2000,
+  "cooperativeGraceDay": 28,
+  "executiveDuesAmount": 5000,
+  "cooperativeHandPrice": 20000,
+  "flutterwaveSecretKey": "",
+  "cooperativeFineAmount": 5000
+}

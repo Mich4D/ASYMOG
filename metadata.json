@@ -1,0 +1,6 @@
+{
+  "name": "ASYMOG Member Portal",
+  "description": "Official portal for the Association of Yoruba Ministers of God (ASYMOG), providing member registration, portal access, and ministerial certificate generation.",
+  "requestFramePermissions": ["camera", "microphone", "display-capture"],
+  "majorCapabilities": []
+}
