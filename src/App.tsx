@@ -92,10 +92,10 @@ const handleUniversalUpload = async (file: File, supabaseBucket: string): Promis
 type Page = "home" | "register" | "login" | "dashboard" | "meeting" | "admin" | "about" | "resources" | "verification";
 
 const defaultTestimonials = [
-  { id: 1, name: "Pastor Adeoye", text: "ASYMOG has strengthened my calling and grounded me in truth. The fellowship is unmatched.", image: "https://i.pravatar.cc/150?img=11" },
-  { id: 2, name: "Evangelist Mary", text: "This association brought unity and clarity to my ministry. We are stronger together.", image: "https://i.pravatar.cc/150?img=33" },
-  { id: 3, name: "Reverend Oluwaseun", text: "The monthly roll-ups and conferences have totally transformed my approach to leadership and pastoring.", image: "https://i.pravatar.cc/150?img=68" },
-  { id: 4, name: "Apostle Gbenga", text: "A family of ministers where you are truly supported. Getting my ministerial license here was seamless.", image: "https://i.pravatar.cc/150?img=47" },
+  { id: 1, name: "Pastor Solomon", text: "ASYMOG has strengthened my calling and grounded me in truth. The fellowship is unmatched.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/v1778155739/assymog_uploads/johpi8d58hbluscuxbky.jpg" },
+  { id: 2, name: "Pastor. Siminiye", text: "This association brought unity and clarity to my ministry. We are stronger together.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/v1778155785/assymog_uploads/qgpe05nuxoverioxdfbo.jpg" },
+  { id: 3, name: "Pastor Oluwasegun", text: "The monthly roll-ups and conferences have totally transformed my approach to leadership and pastoring.", image: "https://utgwqjmxelinswelqgwg.supabase.co/storage/v1/object/public/App_files/663a9w3wbt8_1778155879103.jpg" },
+  { id: 4, name: "Pastor Sunday", text: "A family of ministers where you are truly supported. Getting my ministerial license here was seamless.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/v1778156023/assymog_uploads/g1eiasyqovpus8wifyvr.jpg" },
   { id: 5, name: "Prophetess Deborah", text: "The cooperative hand has been a financial lifesaver for my ministry. ASYMOG truly cares for its own.", image: "https://i.pravatar.cc/150?img=32" },
   { id: 6, name: "Bishop Emmanuel", text: "Integrity and transparency are the hallmarks of this association. I'm proud to be one of the leaders.", image: "https://i.pravatar.cc/150?img=12" },
 ];
@@ -1044,7 +1044,7 @@ export default function App() {
                 </li>
                 <li className="flex items-start gap-4 hover:text-white transition-colors group">
                   <Phone size={18} className="text-primary-gold mt-0.5 group-hover:drop-shadow-[0_0_5px_rgba(212,175,55,0.5)] transition-all"/> 
-                  <span className="leading-snug">+234 803 456 7890</span>
+                  <span className="leading-snug">09067505783</span>
                 </li>
                 <li className="flex items-start gap-4 hover:text-white transition-colors group">
                   <Church size={18} className="text-primary-gold mt-0.5 group-hover:drop-shadow-[0_0_5px_rgba(212,175,55,0.5)] transition-all"/> 
@@ -1085,7 +1085,7 @@ export default function App() {
 }
 
 function ExecutiveTeam({ editable = false }: { editable?: boolean }) {
-  const [executives, setExecutives] = useState(() => Array(4).fill({ image: null, name: "Executive Name", role: "Executive Role" }));
+  const [executives, setExecutives] = useState(() => Array(6).fill({ image: null, name: "Executive Name", role: "Executive Role" }));
   const [loading, setLoading] = useState(true);
   const [isInitialized, setIsInitialized] = useState(false);
 
@@ -1097,10 +1097,10 @@ function ExecutiveTeam({ editable = false }: { editable?: boolean }) {
       .then(res => res.json())
       .then(data => {
         if (data.executives && data.executives.length > 0) {
-           const merged = Array(4).fill({ image: null, name: "Executive Name", role: "Executive Role" });
+           const merged = Array(6).fill({ image: null, name: "Executive Name", role: "Executive Role" });
            data.executives.forEach((ex: any, idx: number) => {
              const execIndex = ex.id !== undefined ? ex.id : idx;
-             if (execIndex >= 0 && execIndex < 4) {
+             if (execIndex >= 0 && execIndex < 6) {
                merged[execIndex] = ex;
              }
            });
@@ -1197,7 +1197,7 @@ function ExecutiveTeam({ editable = false }: { editable?: boolean }) {
             </div>
           )}
         </div>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-8">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-8">
           {executives.map((exec: any, index: number) => (
             <div key={index} className="flex flex-col items-center bg-off-white p-6 rounded-[2.5rem] border border-primary-gold/20 shadow-sm relative group hover:shadow-xl transition-all duration-500">
               <div className="w-full aspect-[3/4] rounded-[2rem] overflow-hidden mb-6 bg-white border-4 border-white shadow-lg relative group-hover:border-primary-gold transition-all duration-500 flex items-center justify-center group-hover:scale-[1.02]">
@@ -1253,13 +1253,6 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
   const [showLicenseModal, setShowLicenseModal] = useState(false);
   const [licenseForm, setLicenseForm] = useState({ nin: "", certNumber: "" });
   const [licenseStatus, setLicenseStatus] = useState<"idle" | "loading" | "success" | "error">("idle");
-  const [featuredTestimony, setFeaturedTestimony] = useState(testimonials.length > 0 ? testimonials[0] : null);
-
-  useEffect(() => {
-    if (testimonials.length > 0) {
-      setFeaturedTestimony(testimonials[0]);
-    }
-  }, [testimonials]);
   
   const handleOfferClick = (title: string) => {
     if (title === "MINISTERIAL LICENSE") {
@@ -1419,32 +1412,6 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
             </button>
           </div>
 
-          {/* Featured Testimony in Hero */}
-          {featuredTestimony && (
-            <motion.div 
-              initial={{ opacity: 0, scale: 0.9 }}
-              animate={{ opacity: 1, scale: 1 }}
-              transition={{ delay: 1.5, duration: 0.5 }}
-              className="mt-12 max-w-lg bg-white/10 backdrop-blur-lg border border-white/20 p-6 rounded-2xl relative z-40 hidden md:block"
-            >
-              <div className="absolute -top-4 -left-4 w-8 h-8 bg-primary-gold rounded-full flex items-center justify-center text-primary-theme shadow-lg">
-                <LucideQuote size={14} />
-              </div>
-              <p className="text-white italic text-sm mb-4 leading-relaxed line-clamp-3">
-                "{featuredTestimony.text}"
-              </p>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full border border-primary-gold/50 overflow-hidden">
-                  <img src={featuredTestimony.image} alt={featuredTestimony.name} className="w-full h-full object-cover" />
-                </div>
-                <div>
-                  <p className="text-white font-bold text-xs">{featuredTestimony.name}</p>
-                  <div className="flex text-primary-gold text-[8px] gap-0.5">★★★★★</div>
-                </div>
-              </div>
-            </motion.div>
-          )}
-
           {/* Social Proof / Tiny Testimonials in Hero */}
           <motion.div 
             initial={{ opacity: 0, y: 10 }}
@@ -1459,11 +1426,11 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
                 </div>
               ))}
               <div className="w-10 h-10 rounded-full border-2 border-primary-gold bg-primary-theme flex items-center justify-center text-[10px] font-bold text-primary-gold">
-                {testimonials.length > 6 ? `+${testimonials.length - 6}` : ""}
+                +1k
               </div>
             </div>
             <p className="text-white/60 text-xs uppercase tracking-[0.2em] font-medium">
-              Trusted by <span className="text-primary-gold font-bold">{testimonials.length}+ Ministers</span> across the globe
+              Trusted by <span className="text-primary-gold font-bold">1000+ Ministers</span> across the globe
             </p>
           </motion.div>
         </div>
@@ -4481,6 +4448,7 @@ function PlatformSettings({
   const [newExecName, setNewExecName] = useState("");
   const [newExecRole, setNewExecRole] = useState("");
   const [newExecEmail, setNewExecEmail] = useState("");
+  const [newExecPhone, setNewExecPhone] = useState("");
   const [newExecImage, setNewExecImage] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
@@ -4527,13 +4495,14 @@ function PlatformSettings({
       const res = await fetch("/api/admin/executives", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ name: newExecName, role: newExecRole, email: newExecEmail, accessKey, image: newExecImage })
+        body: JSON.stringify({ name: newExecName, role: newExecRole, email: newExecEmail, phone: newExecPhone, accessKey, image: newExecImage })
       });
       const data = await res.json();
       setManagedExecutives([...managedExecutives, data]);
       setNewExecName("");
       setNewExecRole("");
       setNewExecEmail("");
+      setNewExecPhone("");
       setNewExecImage(null);
       setMessage("Executive created successfully!");
     } catch (e) {
@@ -4891,10 +4860,15 @@ function PlatformSettings({
                   <button
                     onClick={() => saveSettings({ cloudinaryUrl })}
                     disabled={saving}
-                    className="w-full md:w-auto bg-primary-theme text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:bg-black transition-all disabled:opacity-50"
+                    className="w-full md:w-auto bg-primary-theme text-white px-8 py-4 rounded-xl font-bold shadow-lg hover:bg-black transition-all disabled:opacity-50 flex items-center justify-center gap-2"
                   >
                     {saving ? "Saving..." : "Apply Media Key"}
                   </button>
+                  {message === "Settings saved successfully!" && !saving && (
+                    <span className="text-sm font-bold text-green-600 flex items-center mt-2 md:mt-0 md:ml-4">
+                      <Check size={16} className="mr-1" /> Save Successful!
+                    </span>
+                  )}
                 </div>
                 <p className="text-[10px] text-gray-400 leading-relaxed italic">
                   Format: cloudinary://API_KEY:API_SECRET@CLOUD_NAME. This enables permanent storage for certificates and ministerial photos.
@@ -4945,6 +4919,11 @@ function PlatformSettings({
                   <Check size={18} />
                   <span>{saving ? "Updating Keys..." : "Save Flutterwave Configuration"}</span>
                 </button>
+                {message === "Settings saved successfully!" && !saving && (
+                  <span className="text-sm font-bold text-green-600 flex items-center mt-2 justify-center">
+                    <Check size={16} className="mr-1" /> Save Successful!
+                  </span>
+                )}
               </div>
             </div>
           </div>
@@ -5035,7 +5014,7 @@ function PlatformSettings({
               <p className="mt-2 text-[10px] text-gray-400">Late payment penalty</p>
             </div>
           </div>
-          <div className="mt-6">
+          <div className="mt-6 flex flex-col items-center">
             <button
               onClick={() => saveSettings({ monthlyDuesAmount, executiveDuesAmount, certificatePrice, licensePrice, cooperativeHandPrice, cooperativeGraceDay, cooperativeFineAmount })}
               disabled={saving}
@@ -5044,6 +5023,11 @@ function PlatformSettings({
               {saving ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} />}
               {saving ? "Updating Pricing..." : "Save Pricing Configuration"}
             </button>
+            {message === "Settings saved successfully!" && !saving && (
+              <span className="text-sm font-bold text-green-600 flex items-center mt-2 justify-center">
+                <Check size={16} className="mr-1" /> Save Successful!
+              </span>
+            )}
           </div>
         </div>
 
@@ -5074,7 +5058,7 @@ function PlatformSettings({
                   />
                </div>
                <div className="flex-1 w-full space-y-4">
-                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
                    <input 
                      type="text" 
                      placeholder="Full Name" 
@@ -5104,6 +5088,13 @@ function PlatformSettings({
                      placeholder="Email Address" 
                      value={newExecEmail} 
                      onChange={e => setNewExecEmail(e.target.value)} 
+                     className="p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-gold bg-white"
+                   />
+                   <input 
+                     type="tel" 
+                     placeholder="Phone Number" 
+                     value={newExecPhone} 
+                     onChange={e => setNewExecPhone(e.target.value)} 
                      className="p-3 border border-gray-200 rounded-xl outline-none focus:ring-2 focus:ring-primary-gold bg-white"
                    />
                  </div>
@@ -5138,6 +5129,11 @@ function PlatformSettings({
                        <div className="flex-1 min-w-0">
                           <p className="font-bold text-gray-900 truncate">{exec.name}</p>
                           <p className="text-xs text-gray-500 mb-1 truncate">{exec.role}</p>
+                          {(exec as any).phone && (
+                             <p className="text-[10px] text-gray-400 mb-1 truncate flex items-center gap-1">
+                               <Phone size={10} /> {(exec as any).phone}
+                             </p>
+                          )}
                           <div className="flex items-center space-x-2">
                              <span className="text-[10px] font-bold text-primary-gold uppercase">Key:</span>
                              <span className="text-xs font-mono font-bold bg-gray-100 px-2 py-0.5 rounded select-all">{exec.accessKey}</span>
@@ -5283,7 +5279,7 @@ function PlatformSettings({
               )}
            </div>
 
-           <div className="mt-6 border-b border-gray-100 pb-8">
+           <div className="mt-6 border-b border-gray-100 pb-8 flex flex-col items-center">
             <button
               onClick={() => saveSettings({ regularMeetings })}
               disabled={saving}
@@ -5292,6 +5288,11 @@ function PlatformSettings({
               {saving ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} />}
               {saving ? "Saving Meetings..." : "Apply Regular Meeting Updates"}
             </button>
+            {message === "Settings saved successfully!" && !saving && (
+              <span className="text-sm font-bold text-green-600 flex items-center mt-2 justify-center">
+                <Check size={16} className="mr-1" /> Save Successful!
+              </span>
+            )}
           </div>
         </div>
 
@@ -5403,7 +5404,7 @@ function PlatformSettings({
               ))}
            </div>
            
-           <div className="mt-6">
+           <div className="mt-6 flex flex-col items-center">
             <button
               onClick={() => saveSettings({ events })}
               disabled={saving}
@@ -5412,6 +5413,11 @@ function PlatformSettings({
               {saving ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} />}
               {saving ? "Saving Events..." : "Apply Event Updates"}
             </button>
+            {message === "Settings saved successfully!" && !saving && (
+              <span className="text-sm font-bold text-green-600 flex items-center mt-2 justify-center">
+                <Check size={16} className="mr-1" /> Save Successful!
+              </span>
+            )}
           </div>
         </div>
 
@@ -5474,10 +5480,10 @@ function PlatformSettings({
                       setTestimonials(updated);
                       saveSettings({ testimonials: updated });
                     }}
-                    className="absolute top-2 right-2 text-red-400 hover:text-red-600 p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                    className="absolute top-2 right-2 text-red-500 bg-red-50 hover:bg-red-100 hover:text-red-700 px-3 py-1 rounded-lg text-xs font-bold transition-colors flex items-center gap-1 shadow-sm border border-red-100"
                     disabled={saving}
                   >
-                    <X size={18} />
+                    <X size={14} /> Remove
                   </button>
                   <div className="flex-grow space-y-3 w-full mt-2 md:mt-0">
                     <div className="flex flex-col md:flex-row gap-3">
@@ -5539,7 +5545,7 @@ function PlatformSettings({
               )}
            </div>
 
-           <div className="mt-6">
+           <div className="mt-6 flex flex-col items-center">
             <button
               onClick={() => saveSettings({ testimonials })}
               disabled={saving}
@@ -5548,6 +5554,11 @@ function PlatformSettings({
               {saving ? <Loader2 size={20} className="animate-spin" /> : <Check size={20} />}
               {saving ? "Saving Testimonials..." : "Apply Testimonial Updates"}
             </button>
+            {message === "Settings saved successfully!" && !saving && (
+              <span className="text-sm font-bold text-green-600 flex items-center mt-2 justify-center">
+                <Check size={16} className="mr-1" /> Save Successful!
+              </span>
+            )}
           </div>
         </div>
 

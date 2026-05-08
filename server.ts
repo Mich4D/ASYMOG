@@ -1,5 +1,4 @@
 import express from "express";
-import { createServer as createViteServer } from "vite";
 import fs from "fs";
 import path from "path";
 import { fileURLToPath } from "url";
@@ -10,11 +9,67 @@ import { createClient } from "@supabase/supabase-js";
 import dotenv from "dotenv";
 import multer from "multer";
 import { v2 as cloudinary } from "cloudinary";
+import nodemailer from "nodemailer";
 
 dotenv.config();
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
+// SMTP Transporter setup (lazy initialized)
+let transporter: any = null;
+
+const getTransporter = () => {
+  if (!transporter) {
+    if (process.env.SMTP_HOST && process.env.SMTP_USER && process.env.SMTP_PASS) {
+      transporter = nodemailer.createTransport({
+        host: process.env.SMTP_HOST,
+        port: parseInt(process.env.SMTP_PORT || "587"),
+        secure: process.env.SMTP_PORT === "465",
+        auth: {
+          user: process.env.SMTP_USER,
+          pass: process.env.SMTP_PASS,
+        },
+      });
+      console.log("✅ SMTP Transporter initialized");
+    } else {
+      console.warn("⚠️ SMTP configuration missing - emails will not be sent");
+    }
+  }
+  return transporter;
+};
+
+async function sendEmail(to: string, subject: string, text: string, html?: string) {
+  const mailTransporter = getTransporter();
+  if (!mailTransporter) return false;
+
+  try {
+    const info = await mailTransporter.sendMail({
+      from: process.env.SMTP_FROM || process.env.SMTP_USER,
+      to,
+      subject,
+      text,
+      html: html || text.replace(/\n/g, '<br>'),
+    });
+    console.log(`✅ Email sent: ${info.messageId}`);
+    return true;
+  } catch (err) {
+    console.error("❌ Failed to send email:", err);
+    return false;
+  }
+}
+
+
+// Use process.cwd() instead of __dirname to avoid import.meta.url issues on Vercel
+const baseDir = process.cwd();
+
+// Dynamic import for Vite
+let createViteServer: any;
+if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+  try {
+    const viteModule = await import("vite");
+    createViteServer = viteModule.createServer;
+  } catch (e) {
+    console.warn("Vite not found, static serving only");
+  }
+}
 
 const USERS_FILE = "users";
 const EXECUTIVES_FILE = "executives";
@@ -26,7 +81,7 @@ const RESOURCES_FILE = "resources";
 const COOPERATIVE_PAYMENTS_FILE = "cooperative_payments";
 const MESSAGES_FILE = "messages";
 
-const uploadsDir = process.env.VERCEL ? "/tmp/uploads" : path.join(__dirname, "uploads");
+const uploadsDir = process.env.VERCEL ? "/tmp/uploads" : path.join(baseDir, "uploads");
 if (!fs.existsSync(uploadsDir)) {
   try {
     fs.mkdirSync(uploadsDir);
@@ -63,21 +118,14 @@ const initializeCloudinary = async (providedSettings?: any) => {
     if (providedSettings?.cloudinaryUrl && providedSettings.cloudinaryUrl.startsWith("cloudinary://")) {
       url = providedSettings.cloudinaryUrl;
     } else {
-      // Try to load from local file first (fast)
+      // Try to load from database first in production
       try {
-        const filePath = path.join(__dirname, `${SETTINGS_FILE}.json`);
-        if (fs.existsSync(filePath)) {
-          const settings = JSON.parse(fs.readFileSync(filePath, 'utf8'));
-          if (settings?.cloudinaryUrl && settings.cloudinaryUrl.startsWith("cloudinary://")) {
-            url = settings.cloudinaryUrl;
-          }
-        }
-      } catch (e) {
-        // Fallback to full loadData if file read fails
         const settings = await loadData(SETTINGS_FILE, null);
         if (settings?.cloudinaryUrl && settings.cloudinaryUrl.startsWith("cloudinary://")) {
           url = settings.cloudinaryUrl;
         }
+      } catch (e) {
+        console.warn("Could not load settings for Cloudinary initialization:", e);
       }
     }
 
@@ -88,7 +136,7 @@ const initializeCloudinary = async (providedSettings?: any) => {
           cloudinary_url: trimmedUrl,
           secure: true
         });
-        console.log("Cloudinary initialized via URL");
+        console.log("✅ Cloudinary initialized via URL");
         cloudinaryConfiguredStatus = true;
         return true;
       }
@@ -99,19 +147,20 @@ const initializeCloudinary = async (providedSettings?: any) => {
         api_secret: process.env.CLOUDINARY_API_SECRET,
         secure: true
       });
-      console.log("Cloudinary initialized via individual keys");
+      console.log("✅ Cloudinary initialized via individual keys");
       cloudinaryConfiguredStatus = true;
       return true;
     }
+    
+    console.warn("⚠️ Cloudinary NOT configured. Uploads will fail in production.");
     cloudinaryConfiguredStatus = false;
     return false;
   } catch (err) {
-    console.error("Failed to initialize Cloudinary:", err);
+    console.error("❌ Failed to initialize Cloudinary:", err);
     cloudinaryConfiguredStatus = false;
     return false;
   }
 };
-initializeCloudinary();
 
 const isCloudinaryConfigured = () => {
   return cloudinaryConfiguredStatus;
@@ -129,15 +178,69 @@ const isSupabaseConfigured = () => {
   return supabaseUrl !== "" && supabaseKey !== "" && !supabaseKey.startsWith("sb_publishable_") && !supabaseKey.startsWith("your_");
 };
 
-const supabase = createClient(
-  supabaseUrl || "https://placeholder.supabase.co", 
-  supabaseKey || "placeholder"
-);
+let supabase: any;
+try {
+  supabase = createClient(
+    supabaseUrl || "https://placeholder.supabase.co", 
+    supabaseKey || "placeholder"
+  );
+} catch (err) {
+  console.error("Critical: Failed to create Supabase client:", err);
+}
+
+// Group all startup initialization logic
+async function runInitializations() {
+    console.log("Starting platform initializations...");
+    try {
+        // Initialize Cloudinary (which may depend on Supabase if settings are stored there).
+        await initializeCloudinary();
+
+        // Initial default setup
+        let settings = await loadData(SETTINGS_FILE, null);
+        if (!settings) {
+            console.log("Creating default settings file...");
+            const defaultSettings = {
+                heroImage: "/hero-bg.jpg", 
+                logoImage: null,
+                monthlyDuesAmount: 2000,
+                executiveDuesAmount: 5000,
+                certificatePrice: 5000,
+                licensePrice: 15000,
+                events: [
+                  { id: 1, title: "National Conference", date: "October 2026", loc: "Lagos" },
+                  { id: 2, title: "Virtual Prayer", date: "Every Friday", loc: "Online" }
+                ],
+                regularMeetings: [],
+                testimonials: []
+            };
+            await saveData(SETTINGS_FILE, defaultSettings);
+            console.log("Default settings created.");
+        }
+
+        // Check Supabase health
+        await checkSupabaseHealth();
+        
+        console.log("Platform initializations completed.");
+    } catch (err) {
+        console.error("Error during initializations:", err);
+    }
+}
+
+const dataCache = new Map<string, { data: any, timestamp: number }>();
+const CACHE_TTL = 60000; // 1 minute cache for startup/settings
 
 async function loadData(key: string, _default: any) {
+  const now = Date.now();
+  const cached = dataCache.get(key);
+  if (cached && (now - cached.timestamp < CACHE_TTL)) {
+    console.log(`[loadData] Returning cached data for: ${key}`);
+    return cached.data;
+  }
+
+  console.log(`[loadData] Loading key: ${key}`);
   // Always start with local file as a baseline/fallback
   let fileData = _default;
-  const filePath = path.join(__dirname, `${key}.json`);
+  const filePath = path.join(baseDir, `${key}.json`);
   try {
     if (fs.existsSync(filePath)) {
       const content = fs.readFileSync(filePath, "utf-8");
@@ -161,35 +264,88 @@ async function loadData(key: string, _default: any) {
   }
 
   if (!isSupabaseConfigured()) {
+    console.log(`[loadData] Supabase not configured, returning local data for ${key}`);
+    dataCache.set(key, { data: fileData, timestamp: now });
     return fileData;
   }
 
+  console.log(`[loadData] Trying Supabase for ${key}...`);
   try {
-    const { data, error } = await supabase.from('kv_store').select('value').eq('key', key).single();
+    // Add a race to prevent hanging indefinitely
+    const supabaseRequest = supabase.from('kv_store').select('value').eq('key', key).single();
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase timeout")), 8000));
+    
+    const { data, error } = (await Promise.race([supabaseRequest, timeoutPromise])) as any;
+
     if (error) {
-       if (error.code !== 'PGRST116') { // PGRST116 is not found, which is fine
+       const isNotFound = error.code === 'PGRST116';
+       if (!isNotFound) {
           console.error(`Supabase load error for ${key}:`, error.message);
+       } else {
+          console.log(`[loadData] Key ${key} not found in Supabase kv_store`);
        }
+       
+       // Fallback for settings specifically
+       if (key === SETTINGS_FILE) {
+          console.log(`[loadData] Trying legacy settings table for ${key}...`);
+          const { data: legacyData, error: legacyError } = await supabase.from('settings').select('*').single();
+          if (!legacyError && legacyData) {
+             console.log(`[loadData] Found legacy settings for ${key}`);
+             dataCache.set(key, { data: legacyData, timestamp: now });
+             return legacyData;
+          }
+       } else if (key === EXECUTIVES_FILE) {
+          console.log(`[loadData] Trying legacy executives table for ${key}...`);
+          const { data: legacyExecs, error: legacyError } = await supabase.from('executives').select('*');
+          if (!legacyError && legacyExecs && legacyExecs.length > 0) {
+             console.log(`[loadData] Found legacy executives for ${key}`);
+             dataCache.set(key, { data: legacyExecs, timestamp: now });
+             return legacyExecs;
+          }
+       }
+       
+       if (!isNotFound) {
+         console.log(`[loadData] Returning local data after Supabase error for ${key}`);
+       } else {
+         console.log(`[loadData] Returning local data for ${key} (not found in Supabase)`);
+       }
+       dataCache.set(key, { data: fileData, timestamp: now });
        return fileData;
     }
-    if (data && data.value) return data.value;
+    if (data && data.value) {
+       console.log(`[loadData] Loaded ${key} from Supabase kv_store`);
+       dataCache.set(key, { data: data.value, timestamp: now });
+       return data.value;
+    }
   } catch (err) {
     console.error(`Supabase load exception for ${key}:`, err);
   }
+  console.log(`[loadData] Returning local data after exception/not found for ${key}`);
+  dataCache.set(key, { data: fileData, timestamp: now });
   return fileData;
 }
 
 async function saveData(key: string, data: any) {
-  // Always save to local file first
-  const filePath = path.join(__dirname, `${key}.json`);
+  dataCache.delete(key);
+  // Always try to save to local file first as a cache/baseline
+  const filePath = path.join(baseDir, `${key}.json`);
+  let localSaveSuccess = false;
   try {
     fs.writeFileSync(filePath, JSON.stringify(data, null, 2));
-  } catch (err) {
-    console.error(`Local file save error for ${key}:`, err);
+    localSaveSuccess = true;
+  } catch (err: any) {
+    // Only warn if not on Vercel, or if it's a real error. 
+    // On Vercel, we expect this to fail eventually.
+    if (!process.env.VERCEL) {
+      console.error(`Local file save error for ${key}:`, err.message);
+    }
   }
 
   if (!isSupabaseConfigured()) {
-    return true; // We saved locally at least
+    if (process.env.VERCEL && !localSaveSuccess) {
+      console.error(`CRITICAL: Cannot save ${key} on Vercel without Supabase configured. Local filesystem is read-only.`);
+    }
+    return localSaveSuccess;
   }
 
   try {
@@ -224,46 +380,37 @@ async function checkSupabaseHealth() {
 
   // Check storage buckets
   const buckets = ['books', 'App_files', 'executive member'];
+  console.log("Verifying Supabase storage buckets...");
   for (const bucketName of buckets) {
-    const { data: bucketData, error: bucketError } = await supabase.storage.getBucket(bucketName);
-    if (bucketError) {
-      console.warn(`WARNING: Storage bucket '${bucketName}' missing or inaccessible:`, bucketError.message);
-    } else {
-      console.log(`SUCCESS: Storage bucket '${bucketName}' is accessible.`);
+    try {
+      const { data: bucketData, error: bucketError } = await supabase.storage.getBucket(bucketName);
+      if (bucketError) {
+        console.error(`❌ ERROR: Storage bucket '${bucketName}' is missing! Please create it in Supabase Storage and set it to PUBLIC.`);
+      } else {
+        console.log(`✅ SUCCESS: Storage bucket '${bucketName}' is ready.`);
+      }
+    } catch (err) {
+       console.error(`❌ ERROR: Failed to reach bucket '${bucketName}':`, err);
     }
   }
 }
 
-// Initial default setup
-setTimeout(async () => {
-    let settings = await loadData(SETTINGS_FILE, null);
-    if (!settings) {
-      await saveData(SETTINGS_FILE, {
-        heroImage: "/hero-bg.jpg", 
-        logoImage: null,
-        monthlyDuesAmount: 2000,
-        executiveDuesAmount: 5000,
-        certificatePrice: 5000,
-        licensePrice: 10000,
-        events: [
-          { id: 1, title: "Annual Minister Conference", date: "October 12-14, 2026", loc: "Lagos, Nigeria" },
-          { id: 2, title: "Virtual Fellowship & Prayer", date: "Every Friday", loc: "ASSYMOG Meeting Room" },
-          { id: 3, title: "Leadership & Growth Workshop", date: "August 5, 2026", loc: "Online" }
-        ]
-      });
-    }
-}, 0);
-
 // Create outer app instance for Vercel
 const app = express();
 const PORT = 3000;
-const httpServer = createServer(app);
-const io = new Server(httpServer, {
-  cors: {
-    origin: "*",
-    methods: ["GET", "POST"]
-  }
-});
+
+let httpServer: any;
+let io: any;
+
+if (!process.env.VERCEL) {
+  httpServer = createServer(app);
+  io = new Server(httpServer, {
+    cors: {
+      origin: "*",
+      methods: ["GET", "POST"]
+    }
+  });
+}
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
@@ -280,21 +427,33 @@ app.get("/api/health", (req, res) => {
 });
 
 // Cloudinary Upload Endpoint
-app.post("/api/upload-cloudinary", upload.single('file'), async (req, res) => {
-  if (!req.file) {
-    return res.status(400).json({ error: "No file uploaded" });
-  }
+  app.post("/api/upload-cloudinary", upload.single('file'), async (req, res) => {
+    if (!req.file) {
+      console.error("Cloudinary upload failed: No file in request");
+      return res.status(400).json({ error: "No file uploaded" });
+    }
 
-  if (!isCloudinaryConfigured()) {
-     console.warn("Cloudinary not configured, returning local path as fallback");
-     return res.json({ url: `/uploads/${req.file.filename}`, fallback: true });
-  }
+    // Try to initialize if not yet configured
+    if (!isCloudinaryConfigured()) {
+       await initializeCloudinary();
+    }
 
-  try {
-    const result = await cloudinary.uploader.upload(req.file.path, {
-      folder: "assymog_uploads",
-      resource_type: "auto"
-    });
+    if (!isCloudinaryConfigured()) {
+       console.error("Cloudinary upload failed: NOT CONFIGURED. Please check CLOUDINARY_URL in Vercel settings.");
+       // Clean up the temp file
+       if (fs.existsSync(req.file.path)) fs.unlinkSync(req.file.path);
+       return res.status(500).json({ 
+         error: "Cloudinary is not configured.", 
+         suggestion: "Go to your Vercel project settings and add CLOUDINARY_URL as an environment variable." 
+       });
+    }
+
+    try {
+      console.log(`Uploading file to Cloudinary: ${req.file.originalname}`);
+      const result = await cloudinary.uploader.upload(req.file.path, {
+        folder: "assymog_uploads",
+        resource_type: "auto"
+      });
     
     // Clean up local file after upload
     if (fs.existsSync(req.file.path)) {
@@ -316,21 +475,23 @@ app.post("/api/upload-cloudinary", upload.single('file'), async (req, res) => {
 });
 
 // Socket.io Real-Time Chat handling
-io.on("connection", (socket) => {
-  console.log("A user connected to chat:", socket.id);
+if (io) {
+  io.on("connection", (socket: any) => {
+    console.log("A user connected to chat:", socket.id);
 
-  socket.on("chat message", (msg) => {
-    // Broadcast the message to everyone
-    io.emit("chat message", {
-      ...msg,
-      timestamp: new Date().toISOString()
+    socket.on("chat message", (msg: any) => {
+      // Broadcast the message to everyone
+      io.emit("chat message", {
+        ...msg,
+        timestamp: new Date().toISOString()
+      });
+    });
+
+    socket.on("disconnect", () => {
+      console.log("User disconnected:", socket.id);
     });
   });
-
-  socket.on("disconnect", () => {
-    console.log("User disconnected:", socket.id);
-  });
-});
+}
 
 // We no longer wrap the ENTIRE api routes in startServer. 
 // Just start the Vite middleware if we are doing local server.
@@ -362,7 +523,7 @@ io.on("connection", (socket) => {
         filename = file.filename;
         
         // Try Cloudinary first
-        if (isCloudinaryConfigured()) {
+        if (isCloudinaryConfigured() || await initializeCloudinary()) {
             try {
                 const result = await cloudinary.uploader.upload(file.path, {
                     folder: "assymog_resources",
@@ -505,7 +666,7 @@ io.on("connection", (socket) => {
 
   app.post("/api/admin/executives", async (req, res) => {
     try {
-      const { name, role, email, accessKey } = req.body;
+      const { name, role, email, phone, accessKey } = req.body;
       const execs = await loadData(EXECUTIVES_LIST_FILE, []);
       
       const roleCount = execs.filter((e: any) => e.role === role).length;
@@ -515,7 +676,7 @@ io.on("connection", (socket) => {
         return res.status(400).json({ error: `The position of ${role} is full (Limit: ${limit}).` });
       }
 
-      const newExec = { id: Date.now(), name, role, email, accessKey, createdAt: new Date().toISOString() };
+      const newExec = { id: Date.now(), name, role, email, phone, accessKey, createdAt: new Date().toISOString() };
       execs.push(newExec);
       await saveData(EXECUTIVES_LIST_FILE, execs);
       res.json(newExec);
@@ -560,7 +721,7 @@ io.on("connection", (socket) => {
             churchName: "ASSYMOG Executive Board",
             status: 'approved',
             registrationNumber: exec.accessKey,
-            phone: exec.role,
+            phone: exec.phone || exec.email,
             duesPayments: myPayments
           } 
         });
@@ -629,7 +790,7 @@ io.on("connection", (socket) => {
         registrationNumber: u.accessKey || "EXECUTIVE",
         churchName: "ASSYMOG Executive Board",
         churchAddress: "National Secretariat",
-        phone: u.email,
+        phone: u.phone || u.email,
         state: "Federal",
         lga: "Executive Council",
         role: u.role,
@@ -965,6 +1126,19 @@ io.on("connection", (socket) => {
       
       allMessages.push(newMessage);
       await saveData(MESSAGES_FILE, allMessages);
+
+      // Send email notification for the new message
+      const adminEmail = process.env.SMTP_FROM || "isokankristi@gmail.com"; 
+      try {
+        await sendEmail(
+          adminEmail,
+          `New Support Message: ${subject || "No Subject"}`,
+          `You have received a new support message from ${userName} (${userEmail}).\n\nSubject: ${subject}\n\nMessage:\n${message}\n\nView this in the admin portal.`
+        );
+      } catch (emailErr) {
+        console.warn("Failed to send email notification:", emailErr);
+      }
+
       res.json(newMessage);
     } catch (e) {
       res.status(500).json({ error: "Failed to send message" });
@@ -1000,6 +1174,21 @@ io.on("connection", (socket) => {
         });
         allMessages[msgIndex].status = "replied";
         await saveData(MESSAGES_FILE, allMessages);
+
+        // Send email notification to the user
+        const originalMessage = allMessages[msgIndex];
+        if (originalMessage.userEmail) {
+          try {
+            await sendEmail(
+              originalMessage.userEmail,
+              `Reply to your support message: ${originalMessage.subject}`,
+              `Hello ${originalMessage.userName || "user"},\n\nAn administrator has replied to your support message.\n\nReply:\n${reply}\n\nOriginal Message:\n${originalMessage.message}\n\nBest regards,\nASYMOG Team`
+            );
+          } catch (emailErr) {
+            console.warn("Failed to send email reply notification:", emailErr);
+          }
+        }
+
         res.json({ success: true, message: allMessages[msgIndex] });
       } else {
         res.status(404).json({ error: "Message not found" });
@@ -1167,9 +1356,15 @@ io.on("connection", (socket) => {
   });
 
   app.post("/api/admin/login", (req, res) => {
-    const { password, mode } = req.body;
-    const adminPassword = process.env.ADMIN_PASSWORD || "Admin123";
-    const auditorPassword = process.env.AUDITOR_PASSWORD || "Audit123";
+    console.log("Admin login request received", { mode: req.body?.mode });
+    try {
+      if (!req.body) {
+        console.error("Login failed: Missing request body");
+        return res.status(400).json({ error: "Missing request body" });
+      }
+      const { password, mode } = req.body;
+      const adminPassword = process.env.ADMIN_PASSWORD || "Admin123";
+      const auditorPassword = process.env.AUDITOR_PASSWORD || "Audit123";
     
     if (mode === 'auditor') {
       if (password === auditorPassword || password === "audit123") {
@@ -1185,9 +1380,14 @@ io.on("connection", (socket) => {
     } else {
       res.status(401).json({ error: "Invalid admin password" });
     }
+    } catch (e) {
+      console.error("Admin login error:", e);
+      res.status(500).json({ error: "Internal server error" });
+    }
   });
 
   app.get("/api/executives", async (req, res) => {
+    console.log("GET /api/executives");
     try {
       if (isSupabaseConfigured()) {
         const { data: execs, error } = await supabase.from('executives').select('*').order('id', { ascending: true });
@@ -1234,6 +1434,7 @@ io.on("connection", (socket) => {
   });
 
   app.get("/api/settings", async (req, res) => {
+    console.log("GET /api/settings");
     try {
       const configStatus = {
         cloudinary: isCloudinaryConfigured(),
@@ -1306,7 +1507,7 @@ io.on("connection", (socket) => {
       // Also optionally sync to a dedicated settings table if legacy code expect it
       if (isSupabaseConfigured()) {
         try {
-          await supabase.from('settings').upsert(payload, { onConflict: 'id' });
+          await supabase.from('settings').upsert({ id: 1, ...payload }, { onConflict: 'id' });
         } catch (e) {}
       }
       
@@ -1372,33 +1573,48 @@ io.on("connection", (socket) => {
     }
   });
 
-  // Export for Vercel Serverless Function
+  // Global error handler for Express to prevent platform-level 500s
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Unhandled Global Error:", err);
+  res.status(500).json({ 
+    error: "A server-side error occurred", 
+    message: process.env.NODE_ENV === "production" ? "Internal Server Error" : err.message 
+  });
+});
+
+// Export for Vercel Serverless Function
   export default app;
 
   // Local server listening logic
   async function startServer() {
-    // Vite middleware for development
-    if (process.env.NODE_ENV !== "production") {
+    // vite instance is now dynamically imported
+    if (process.env.NODE_ENV !== "production" && !process.env.VERCEL && createViteServer) {
       const vite = await createViteServer({
         server: { middlewareMode: true, hmr: false },
         appType: "spa",
       });
       app.use(vite.middlewares);
     } else {
-      const distPath = path.join(__dirname, "dist");
+      const distPath = path.join(baseDir, "dist");
       app.use(express.static(distPath));
       app.get("*", (req, res) => {
         res.sendFile(path.join(distPath, "index.html"));
       });
     }
 
-    httpServer.listen(PORT, "0.0.0.0", () => {
-      console.log(`Server running at http://localhost:${PORT}`);
-      checkSupabaseHealth();
-    });
-  }
+    if (httpServer) {
+        httpServer.listen(PORT, "0.0.0.0", async () => {
+            console.log(`Server running at http://localhost:${PORT}`);
+            // Run initializations after server starts
+            await runInitializations();
+        });
+    }
+}
 
   // Only run the server if not running in a serverless environment like Vercel
   if (!process.env.VERCEL) {
     startServer();
+  } else {
+    // On Vercel, trigger initializations eagerly during the cold start
+    runInitializations().catch(console.error);
   }

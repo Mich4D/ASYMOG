@@ -8,13 +8,13 @@
     },
     {
       "id": 2,
-      "loc": "Google Meet",
+      "loc": "ASSYMOG Meeting Room",
       "date": "Every Friday",
       "title": "Virtual Fellowship & Prayer"
     },
     {
       "id": 3,
-      "loc": "Google Meet",
+      "loc": "Online",
       "date": "August 5, 2026",
       "title": "Leadership & Growth Workshop"
     }
@@ -60,7 +60,8 @@
       "image": "https://i.pravatar.cc/150?img=12"
     }
   ],
-  "presidentName": "Bishop Emmanuel",
+  "cloudinaryUrl": "cloudinary://682652938611986:6C-3mOP83ECmrudb2kljLc4TCEE@dlg60ept3",
+  "presidentName": "Pastor Dr. Micheal Adetoro ",
   "flutterwaveKey": "",
   "presidentImage": "https://res.cloudinary.com/dlg60ept3/image/upload/v1778142540/assymog_uploads/sxhxscrfbfzzhba2dr4q.png",
   "regularMeetings": [
@@ -68,22 +69,22 @@
       "id": 1,
       "meta": "Time: 10:00 AM Prompt",
       "title": "Monthly General Meeting",
-      "venue": "Google Meet (Online Link provided in Member Portal)",
+      "venue": "Main Secretariat / Zoom",
       "schedule": "First Thursday of every month"
     },
     {
       "id": 2,
       "meta": "Time: 7:00 PM",
       "title": "Executive Meeting",
-      "venue": "Google Meet (Direct Link in Executive Portal)",
+      "venue": "Virtual (Google Meet)",
       "schedule": "Last Tuesday of every month"
     },
     {
       "id": 3,
-      "meta": "A 3-day strategic annual gathering.",
+      "meta": "A 3-day strategic roll-up and spiritual retreat.",
       "title": "Annual Ministers Conference",
-      "venue": "Combined: Physical (Aboru, Lagos) & Google Meet",
-      "schedule": "Every 3rd week of November"
+      "venue": "3 church street, aboru iyana ipaja, Lagos State, Nigeria ",
+      "schedule": "Every 3rd week of November "
     }
   ],
   "certificatePrice": 5000,
