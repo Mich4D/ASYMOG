@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { BookOpen, LucideQuote, Download, LogOut, User, Users, PlusCircle, Church, Phone, Mail, Lock, Award, ShieldCheck, Menu, X, Video, ArrowRight, Eye, EyeOff, Loader2, Check, Search, ChevronDown, CreditCard, History, Facebook, MessageCircle, Reply, Calendar, Globe, TrendingUp, Heart, Briefcase, Zap, Camera, Clock, Plus, DollarSign, PieChart as PieChartIcon, BarChart as BarChartIcon, BarChart2, FileText, Cloud } from "lucide-react";
+import { BookOpen, LucideQuote, Download, LogOut, User, Users, PlusCircle, Church, Phone, Mail, Lock, Award, ShieldCheck, Menu, X, Video, ArrowRight, Eye, EyeOff, Loader2, Check, Search, ChevronDown, CreditCard, History, Facebook, MessageCircle, Reply, Calendar, Globe, TrendingUp, Heart, Briefcase, Zap, Camera, Clock, Plus, DollarSign, PieChart as PieChartIcon, BarChart as BarChartIcon, BarChart2, FileText, Cloud, Trash2 } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { jsPDF } from "jspdf";
 import { createClient } from "@supabase/supabase-js";
@@ -961,9 +961,15 @@ export default function App() {
                           onClick={() => setExpandedMemberIndex(expandedMemberIndex === i ? null : i)}
                         >
                           <div className="flex items-center space-x-4">
-                              <div className="w-14 h-14 bg-primary-theme/5 rounded-2xl flex items-center justify-center text-primary-theme font-serif font-bold text-2xl border border-primary-theme/10 group-hover:bg-primary-theme group-hover:text-white transition-colors">
-                                {m.fullName.charAt(0)}
-                              </div>
+                              {m.profilePicture ? (
+                                <div className="w-14 h-14 rounded-2xl overflow-hidden border border-gray-100 shadow-sm flex-shrink-0">
+                                  <img src={optimizeImage(m.profilePicture, 150)} alt={m.fullName} className="w-full h-full object-cover" />
+                                </div>
+                              ) : (
+                                <div className="w-14 h-14 bg-primary-theme/5 rounded-2xl flex items-center justify-center text-primary-theme font-serif font-bold text-2xl border border-primary-theme/10 group-hover:bg-primary-theme group-hover:text-white transition-colors flex-shrink-0">
+                                  {m.fullName.charAt(0)}
+                                </div>
+                              )}
                               <div>
                                 <h4 className="font-bold text-gray-900 group-hover:text-primary-theme transition-colors flex items-center">
                                   {m.fullName}
@@ -1296,6 +1302,21 @@ function ExecutiveTeam({ editable = false }: { editable?: boolean }) {
                 readOnly={!editable}
                 className={`text-sm text-primary-theme font-medium text-center bg-transparent border-b border-transparent ${editable ? 'hover:border-gray-300 focus:border-primary-gold focus:outline-none cursor-text' : 'focus:outline-none cursor-default'} transition-colors w-full`}
               />
+              {editable && (
+                <button
+                  onClick={() => {
+                    setExecutives(prev => {
+                      const newExecs = [...prev];
+                      newExecs[index] = { image: null, name: "Executive Name", role: "Executive Role" };
+                      return newExecs;
+                    })
+                  }}
+                  className="absolute top-4 right-4 bg-red-100 text-red-600 p-2 rounded-full hover:bg-red-200 transition-colors shadow-sm z-10 opacity-0 group-hover:opacity-100"
+                  title="Clear Executive"
+                >
+                  <X size={16} />
+                </button>
+              )}
             </div>
           ))}
         </div>
@@ -3068,26 +3089,37 @@ function DashboardPage({
         <div className="absolute top-0 right-0 w-64 h-64 bg-primary-gold rounded-full mix-blend-screen opacity-20 blur-3xl pointer-events-none"></div>
         <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-primary-gold rounded-full mix-blend-screen opacity-10 blur-3xl pointer-events-none"></div>
         
-        <div className="relative z-10 w-full md:w-auto">
-           <div className="flex items-center space-x-2 mb-4">
-             <ShieldCheck size={20} className="text-primary-gold" />
-             <p className="text-primary-gold font-bold uppercase tracking-widest text-xs">{user.userType === 'executive' ? 'ASYMOG Executive Portal' : 'ASYMOG Membership Panel'}</p>
-           </div>
-           <h2 className="font-serif text-3xl font-bold mb-6">{user.fullName}</h2>
-           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-300">
-             <div className="flex items-center space-x-3 bg-white/5 p-3 rounded-xl">
-               <Mail size={16} className="text-primary-gold" /> 
-               <span>{user.email}</span>
+        <div className="relative z-10 w-full md:w-auto flex flex-col sm:flex-row items-start sm:items-center gap-6">
+           {((user.certForm && user.certForm.profilePicture) || (user as any).image) ? (
+              <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden border-2 border-primary-gold/50 shadow-[0_0_30px_rgba(212,175,55,0.2)] shrink-0 bg-primary-theme/50">
+                 <img src={optimizeImage((user.certForm && user.certForm.profilePicture) || (user as any).image, 400)} alt={user.fullName} className="w-full h-full object-cover" />
+              </div>
+           ) : (
+              <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] border-2 border-white/10 shrink-0 bg-white/5 flex items-center justify-center shadow-lg">
+                 <User size={48} className="text-primary-gold/50" />
+              </div>
+           )}
+           <div className="flex-1">
+             <div className="flex items-center space-x-2 mb-4">
+               <ShieldCheck size={20} className="text-primary-gold" />
+               <p className="text-primary-gold font-bold uppercase tracking-widest text-xs">{user.userType === 'executive' ? 'ASYMOG Executive Portal' : 'ASYMOG Membership Panel'}</p>
              </div>
-             {user.phone && (
+             <h2 className="font-serif text-3xl font-bold mb-6">{user.fullName}</h2>
+             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 text-sm text-gray-300">
                <div className="flex items-center space-x-3 bg-white/5 p-3 rounded-xl">
-                 <Phone size={16} className="text-primary-gold" /> 
-                 <span>{user.phone}</span>
+                 <Mail size={16} className="text-primary-gold" /> 
+                 <span>{user.email}</span>
                </div>
-             )}
-             <div className="flex items-center space-x-3 bg-white/5 p-3 rounded-xl sm:col-span-2">
-               <Church size={16} className="text-primary-gold" /> 
-               <span>Assigned Church: <strong className="text-white">{user.churchName}</strong></span>
+               {user.phone && (
+                 <div className="flex items-center space-x-3 bg-white/5 p-3 rounded-xl">
+                   <Phone size={16} className="text-primary-gold" /> 
+                   <span>{user.phone}</span>
+                 </div>
+               )}
+               <div className="flex items-center space-x-3 bg-white/5 p-3 rounded-xl sm:col-span-2">
+                 <Church size={16} className="text-primary-gold" /> 
+                 <span>Assigned Church: <strong className="text-white">{user.churchName}</strong></span>
+               </div>
              </div>
            </div>
         </div>
@@ -3138,7 +3170,7 @@ function DashboardPage({
              <div className="absolute top-0 right-0 w-32 h-32 bg-primary-gold/5 rounded-bl-full -mr-8 -mt-8"></div>
              <div className="flex items-center justify-between mb-8">
                 <div>
-                   <h3 className="font-serif text-3xl font-bold text-gray-900 mb-2">Monthly Dues</h3>
+                   <h3 className="font-serif text-3xl font-bold text-gray-900 mb-2">Executive Dues</h3>
                    <p className="text-gray-500 font-medium italic">Support the Association's Vision</p>
                 </div>
                 <div className="text-right">
@@ -3354,7 +3386,7 @@ function DashboardPage({
         </motion.div>
       </div>
 
-      {user.status !== 'pending' && (
+      {user.status !== 'pending' && user.userType !== 'executive' && (
       <section className="mt-12 bg-white p-8 rounded-[2.5rem] shadow-xl border border-gray-100">
         <div className="flex flex-col md:flex-row justify-between items-start md:items-center mb-8 gap-6">
           <div>
@@ -5313,9 +5345,9 @@ function PlatformSettings({
                        </div>
                        <button 
                         onClick={() => deleteExecutive(exec.id)}
-                        className="text-red-400 hover:text-red-600 p-2 opacity-0 group-hover:opacity-100 transition-opacity"
+                        className="text-red-400 hover:text-red-600 p-2 transition-opacity flex items-center gap-1"
                        >
-                         <X size={18} />
+                         <X size={16} /> <span className="text-[10px] uppercase font-bold tracking-widest hidden sm:inline">Delete</span>
                        </button>
                     </div>
                   ))}
@@ -6270,6 +6302,39 @@ function AdminDashboardPage({
     } catch {}
   };
 
+  const handleInlineAction = async (email: string, action: 'approved' | 'rejected' | 'deleted') => {
+    if (action === 'deleted') {
+      if (!window.confirm("Are you sure you want to permanently delete this user?")) return;
+      try {
+        const res = await fetch("/api/admin/delete-user", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email })
+        });
+        if (!res.ok) throw new Error("Failed to delete user");
+        alert("User deleted successfully!");
+        fetchUsers();
+      } catch (err: any) {
+        alert(err.message);
+      }
+      return;
+    }
+
+    if (!window.confirm(`Are you sure you want to mark this user as ${action}?`)) return;
+    try {
+      const res = await fetch("/api/admin/update-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email, status: action })
+      });
+      if (!res.ok) throw new Error(`Failed to ${action} user`);
+      alert(`User ${action} successfully!`);
+      fetchUsers();
+    } catch (err: any) {
+      alert(err.message);
+    }
+  };
+
   const verifyUserAction = async (action: 'approved' | 'rejected', certificateData?: string, licenseData?: string, certificateExpiry?: string, licenseExpiry?: string) => {
     if (!verifyingUser) return;
     setUpdatingUser(true);
@@ -6625,8 +6690,8 @@ function AdminDashboardPage({
                   const matchesPos = filterPosition === "All" || (u.certForm?.assymogPosition === filterPosition);
                   const matchesStatus = filterStatus === "All" || (u.status?.toLowerCase() === filterStatus.toLowerCase());
                   const matchesSearch = searchQuery === "" || 
-                    u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                    u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                    (u.fullName || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+                    (u.email || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
                     (u.registrationNumber || "").toLowerCase().includes(searchQuery.toLowerCase());
                   return matchesState && matchesPos && matchesSearch && matchesStatus;
                 })
@@ -6643,8 +6708,8 @@ function AdminDashboardPage({
                     const matchesPos = filterPosition === "All" || (u.certForm?.assymogPosition === filterPosition);
                     const matchesStatus = filterStatus === "All" || (u.status?.toLowerCase() === filterStatus.toLowerCase());
                     const matchesSearch = searchQuery === "" || 
-                      u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) || 
-                      u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
+                      (u.fullName || "").toLowerCase().includes(searchQuery.toLowerCase()) || 
+                      (u.email || "").toLowerCase().includes(searchQuery.toLowerCase()) ||
                       (u.registrationNumber || "").toLowerCase().includes(searchQuery.toLowerCase());
                     return matchesState && matchesPos && matchesSearch && matchesStatus;
                   })
@@ -6700,13 +6765,32 @@ function AdminDashboardPage({
                         )}
                       </td>
                       <td className="py-4 px-6 text-right">
-                        <button 
-                          onClick={() => setVerifyingUser(u)}
-                          className="bg-primary-theme text-white px-4 py-2 rounded-lg text-xs font-bold hover:bg-primary-theme/90 transition-colors inline-flex items-center space-x-1"
-                        >
-                          <ShieldCheck size={14} />
-                          <span>{u.status === 'pending' ? 'Verify' : 'Manage'}</span>
-                        </button>
+                        <div className="flex items-center justify-end space-x-2">
+                          {u.status !== 'approved' && (
+                            <button
+                              onClick={() => handleInlineAction(u.email, 'approved')}
+                              className="w-8 h-8 rounded-lg bg-green-50 text-green-600 border border-green-200 hover:bg-green-100 flex items-center justify-center transition-colors"
+                              title="Approve"
+                            >
+                              <Check size={14} strokeWidth={3} />
+                            </button>
+                          )}
+                          <button 
+                            onClick={() => setVerifyingUser(u)}
+                            className="bg-primary-theme text-white px-3 py-1.5 rounded-lg text-xs font-bold hover:bg-primary-theme/90 transition-colors inline-flex items-center space-x-1"
+                            title={u.status === 'pending' ? 'Verify Details' : 'Manage Details'}
+                          >
+                            <ShieldCheck size={14} />
+                            <span>{u.status === 'pending' ? 'Verify' : 'Manage'}</span>
+                          </button>
+                          <button
+                            onClick={() => handleInlineAction(u.email, 'deleted')}
+                            className="w-8 h-8 rounded-lg bg-red-50 text-red-600 border border-red-200 hover:bg-red-100 flex items-center justify-center transition-colors"
+                            title="Delete User"
+                          >
+                            <Trash2 size={14} />
+                          </button>
+                        </div>
                       </td>
                     </tr>
                   ))

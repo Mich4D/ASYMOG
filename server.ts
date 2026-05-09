@@ -278,7 +278,7 @@ async function loadData(key: string, _default: any) {
     const supabaseRequest = supabase.from('kv_store').select('value').eq('key', key).single();
     let timeoutId: any;
     const timeoutPromise = new Promise((_, reject) => {
-      timeoutId = setTimeout(() => reject(new Error("Supabase timeout")), 3000);
+      timeoutId = setTimeout(() => reject(new Error("Supabase timeout")), 8000);
     });
     
     let dbRes: any = {};
@@ -319,7 +319,8 @@ async function loadData(key: string, _default: any) {
        }
        
        if (!isNotFound) {
-         console.log(`[loadData] Returning local data after Supabase error for ${key}`);
+         console.log(`[loadData] Returning local data after Supabase error for ${key} (NOT CACHING TO ALLOW RETRY)`);
+         return fileData; // Do not cache error responses
        } else {
          console.log(`[loadData] Returning local data for ${key} (not found in Supabase)`);
        }
@@ -335,8 +336,7 @@ async function loadData(key: string, _default: any) {
     console.error(`Supabase load exception for ${key}:`, err);
   }
   console.log(`[loadData] Returning local data after exception/not found for ${key}`);
-  dataCache.set(key, { data: fileData, timestamp: now });
-  return fileData;
+  return fileData; // Do not cache unexpected exceptions
 }
 
 async function saveData(key: string, data: any) {
@@ -742,7 +742,7 @@ if (io) {
 
   app.post("/api/admin/executives", async (req, res) => {
     try {
-      const { name, role, email, phone, accessKey } = req.body;
+      const { name, role, email, phone, accessKey, image } = req.body;
       const execs = await loadData(EXECUTIVES_LIST_FILE, []);
       
       const roleCount = execs.filter((e: any) => e.role === role).length;
@@ -752,12 +752,19 @@ if (io) {
         return res.status(400).json({ error: `The position of ${role} is full (Limit: ${limit}).` });
       }
 
-      const newExec = { id: Date.now(), name, role, email, phone, accessKey, createdAt: new Date().toISOString() };
+      let finalAccessKey = accessKey;
+      if (!finalAccessKey || (finalAccessKey.startsWith("ASYM/") && finalAccessKey.length === 11)) {
+        const nextId = execs.length + 1;
+        const yearStr = new Date().getFullYear().toString().substring(2);
+        finalAccessKey = `ASYM/E${yearStr}/${String(nextId).padStart(4, '0')}`;
+      }
+
+      const newExec = { id: Date.now(), name, role, email, phone, image, accessKey: finalAccessKey, createdAt: new Date().toISOString() };
       execs.push(newExec);
       await saveData(EXECUTIVES_LIST_FILE, execs);
 
       // NEW: Send executive appointment email
-      const emailBody = `Dear ${name},\n\nYou have been officially appointed as a member of the ASYMOG Executive Board.\n\nPosition: ${role}\nExecutive Access Key: ${accessKey}\n\nThis Access Key allows you to log in to the Executive portal to manage your profile and access executive resources.\n\nPortal Login: ${process.env.APP_URL || "https://asymog-portal.vercel.app"}/login\n\nCongratulations on your appointment.\n\nGod bless your ministry.\n\nASYMOG Secretariat`;
+      const emailBody = `Dear ${name},\n\nYou have been officially appointed as a member of the ASYMOG Executive Board.\n\nPosition: ${role}\nExecutive Access Key: ${finalAccessKey}\n\nThis Access Key allows you to log in to the Executive portal to manage your profile and access executive resources.\n\nPortal Login: ${process.env.APP_URL || "https://asymog-portal.vercel.app"}/login\n\nCongratulations on your appointment.\n\nGod bless your ministry.\n\nASYMOG Secretariat`;
       
       sendEmail(email, `ASYMOG Executive Board Appointment - ${role}`, emailBody).catch(e => console.error("Email error:", e));
 
@@ -780,7 +787,9 @@ if (io) {
   });
 
   app.post("/api/executive/login", async (req, res) => {
-    const { accessKey } = req.body;
+    let { accessKey } = req.body;
+    if (!accessKey) return res.status(400).json({ error: "Access key required" });
+    accessKey = accessKey.trim();
     try {
       const execs = await loadData(EXECUTIVES_LIST_FILE, []);
       const payments = await loadData(EXECUTIVE_PAYMENTS_FILE, []);
@@ -788,7 +797,7 @@ if (io) {
       
       if (!exec) {
         const users = await loadData(USERS_FILE, []);
-        const promotedExec = users.find((u: any) => u.userType === 'executive' && u.accessKey === accessKey);
+        const promotedExec = users.find((u: any) => u.userType?.toLowerCase() === 'executive' && u.accessKey === accessKey);
         if (promotedExec) exec = { ...promotedExec, name: promotedExec.fullName };
       }
 
@@ -864,6 +873,7 @@ if (io) {
         state: u.state,
         lga: u.lga,
         role: u.role,
+        profilePicture: u.certForm?.profilePicture || u.profilePicture || null,
         status: u.status,
         userType: 'member'
       }));
@@ -876,6 +886,7 @@ if (io) {
         state: u.state,
         lga: u.lga,
         role: u.role,
+        profilePicture: u.certForm?.profilePicture || u.profilePicture || null,
         status: u.status,
         userType: 'member'
       }));
@@ -888,6 +899,7 @@ if (io) {
         state: "Federal",
         lga: "Executive Council",
         role: u.role,
+        profilePicture: u.image || null,
         status: 'approved',
         userType: 'executive'
       }));
@@ -913,30 +925,38 @@ if (io) {
 
   app.get("/api/users", async (req, res) => {
     try {
-    if (isSupabaseConfigured()) {
-      try {
-        const { data, error } = await supabase.from('users').select('*');
-        if (!error && data) {
-          return res.json({ users: data.map((u: any) => ({
-            id: u.id,
-            fullName: u.fullName,
-            email: u.email,
-            phone: u.phone,
-            churchName: u.churchName,
-            status: u.status || "pending",
-            registrationNumber: u.registrationNumber,
-            certificateData: u.certificateData,
-            licenseData: u.licenseData,
-            certForm: u.certForm,
-            licForm: u.licForm
-          })) });
-        }
-      } catch (err) {}
-    }
-    
-    // Fallback if DB check fails
-    let localUsers: any[] = await loadData(USERS_FILE, []);
-    res.json({ users: localUsers });
+      let combinedUsers: any[] = [];
+      let localUsers: any[] = await loadData(USERS_FILE, []);
+      
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase.from('users').select('*');
+          if (!error && data) {
+            combinedUsers = data;
+          }
+        } catch (err) {}
+      }
+      
+      // Merge with local users (Supabase takes precedence by email)
+      const mergedMap = new Map();
+      
+      // Add local users first
+      for (const u of localUsers) {
+        if (u && u.email) mergedMap.set(u.email.toLowerCase(), u);
+      }
+      
+      // Override with Supabase users
+      for (const u of combinedUsers) {
+        if (u && u.email) mergedMap.set(u.email.toLowerCase(), u);
+      }
+      
+      const finalUsers = Array.from(mergedMap.values());
+      
+      res.json({ users: finalUsers.map((u: any) => {
+          const { password, ...safeUser } = u;
+          safeUser.status = safeUser.status || "pending";
+          return safeUser;
+      })});
     } catch (e: any) {
       console.error(e);
       res.json({ users: [] });
@@ -967,14 +987,18 @@ if (io) {
 
     try {
       if (isSupabaseConfigured()) {
-        const { data: existing } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
-        if (existing) {
-           return res.status(400).json({ error: "User already exists" });
-        }
+        try {
+          const { data: existing } = await supabase.from('users').select('id').eq('email', email).maybeSingle();
+          if (existing) {
+             return res.status(400).json({ error: "User already exists" });
+          }
 
-        await supabase.from('users').insert([
-          { fullName, email, phone, churchName, password, status: "pending", registrationNumber }
-        ]);
+          await supabase.from('users').insert([
+            { fullName, email, phone, churchName, password, status: "pending", registrationNumber }
+          ]);
+        } catch (dbErr) {
+          console.error("Supabase insert failed, falling back to local only:", dbErr);
+        }
       }
 
       // Always save to JSON fallback
@@ -982,23 +1006,22 @@ if (io) {
       if (!currentUsers.find((u: any) => u.email === email)) {
         currentUsers.push({ id: Date.now().toString(), fullName, email, phone, churchName, password, status: "pending", registrationNumber });
         await saveData(USERS_FILE, currentUsers);
+      } else {
+        // If not checking Supabase, we might hit this
+        return res.status(400).json({ error: "User already exists" });
       }
 
       res.json({ message: "Registration successful", user: { fullName, email, churchName, status: "pending", registrationNumber } });
     } catch (e: any) {
       console.error("Registration error:", e);
-      // Try local only fallback if not already handled
-      let currentUsers = await loadData(USERS_FILE, []);
-      if (currentUsers.find((u: any) => u.email === email)) {
-        return res.json({ message: "Registration successful (recovered)", user: { fullName, email, churchName, status: "pending", registrationNumber } });
-      }
       res.status(500).json({ error: "Could not complete registration" });
     }
   });
 
   app.post("/api/executive-login", async (req, res) => {
-    const { accessKey } = req.body;
+    let { accessKey } = req.body;
     if (!accessKey) return res.status(400).json({ error: "Access Key required" });
+    accessKey = accessKey.trim();
 
     try {
       // 1. Check special executives list
@@ -1022,7 +1045,7 @@ if (io) {
 
       // 2. Check main users list
       const users = await loadData(USERS_FILE, []);
-      const user = users.find((u: any) => u.accessKey === accessKey && u.userType === 'executive');
+      const user = users.find((u: any) => u.accessKey === accessKey && u.userType?.toLowerCase() === 'executive');
 
       if (user) {
         return res.json({ 
@@ -1220,6 +1243,38 @@ if (io) {
     }
   });
 
+  app.post("/api/admin/delete-user", async (req, res) => {
+    const { email } = req.body;
+    let success = false;
+
+    if (isSupabaseConfigured()) {
+      try {
+        const { error } = await supabase.from('users').delete().eq('email', email);
+        if (!error) success = true;
+      } catch (err) {
+        console.error("Supabase user delete error:", err);
+      }
+    }
+
+    try {
+      let users = await loadData(USERS_FILE, []);
+      const userIndex = users.findIndex((u: any) => u.email === email);
+      if (userIndex !== -1) {
+        users.splice(userIndex, 1);
+        await saveData(USERS_FILE, users);
+        success = true;
+      }
+    } catch (err) {
+      console.error("Local user delete error:", err);
+    }
+
+    if (success) {
+      res.json({ message: "User deleted" });
+    } else {
+      res.status(500).json({ error: "Failed to delete user." });
+    }
+  });
+
   app.post("/api/update-biodata", async (req, res) => {
     const { email, certForm, licForm } = req.body;
     let success = false;
@@ -1293,6 +1348,12 @@ if (io) {
   app.get("/api/messages/my/:email", async (req, res) => {
     try {
       const { email } = req.params;
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase.from('messages').select('*').eq('userEmail', email).order('createdAt', { ascending: false });
+          if (!error && data) return res.json(data);
+        } catch (err) {}
+      }
       const allMessages = await loadData(MESSAGES_FILE, []);
       const myMessages = allMessages.filter((m: any) => m.userEmail === email);
       res.json(myMessages);
@@ -1308,8 +1369,7 @@ if (io) {
         return res.status(400).json({ error: "Missing required fields" });
       }
       
-      const allMessages = await loadData(MESSAGES_FILE, []);
-      const newMessage = {
+      let newMessage = {
         id: Date.now(),
         userEmail,
         userName,
@@ -1320,8 +1380,31 @@ if (io) {
         createdAt: new Date().toISOString()
       };
       
-      allMessages.push(newMessage);
-      await saveData(MESSAGES_FILE, allMessages);
+      let saved = false;
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase.from('messages').insert({
+            id: newMessage.id,
+            userEmail,
+            userName,
+            subject: subject || "No Subject",
+            message,
+            replies: [],
+            status: "unread",
+            createdAt: new Date().toISOString()
+          }).select().single();
+          if (!error && data) {
+            newMessage = data;
+            saved = true;
+          }
+        } catch (err) {}
+      }
+      
+      if (!saved) {
+        const allMessages = await loadData(MESSAGES_FILE, []);
+        allMessages.push(newMessage);
+        await saveData(MESSAGES_FILE, allMessages);
+      }
 
       // Send email notification for the new message
       const adminEmail = process.env.SMTP_FROM || "isokankristi@gmail.com"; 
@@ -1343,6 +1426,12 @@ if (io) {
 
   app.get("/api/admin/messages", async (req, res) => {
     try {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase.from('messages').select('*').order('createdAt', { ascending: false });
+          if (!error && data) return res.json(data);
+        } catch (err) {}
+      }
       const allMessages = await loadData(MESSAGES_FILE, []);
       res.json(allMessages);
     } catch (e) {
@@ -1357,35 +1446,62 @@ if (io) {
         return res.status(400).json({ error: "Missing required fields" });
       }
       
-      const allMessages = await loadData(MESSAGES_FILE, []);
-      const msgIndex = allMessages.findIndex((m: any) => m.id === messageId);
-      
-      if (msgIndex !== -1) {
-        if (!allMessages[msgIndex].replies) allMessages[msgIndex].replies = [];
-        allMessages[msgIndex].replies.push({
-          id: Date.now(),
-          sender: adminName || "Admin",
-          message: reply,
-          createdAt: new Date().toISOString()
-        });
-        allMessages[msgIndex].status = "replied";
-        await saveData(MESSAGES_FILE, allMessages);
+      let repliedMessage = null;
+      let success = false;
+      const newReply = {
+        id: Date.now(),
+        sender: adminName || "Admin",
+        message: reply,
+        createdAt: new Date().toISOString()
+      };
 
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: dbMsg, error: fetchErr } = await supabase.from('messages').select('*').eq('id', messageId).single();
+          if (!fetchErr && dbMsg) {
+            const replies = dbMsg.replies || [];
+            replies.push(newReply);
+            const { data: updatedMsg, error: updateErr } = await supabase.from('messages').update({
+              replies,
+              status: "replied"
+            }).eq('id', messageId).select().single();
+            if (!updateErr && updatedMsg) {
+               repliedMessage = updatedMsg;
+               success = true;
+            }
+          }
+        } catch(e) {}
+      }
+
+      if (!success) {
+        const allMessages = await loadData(MESSAGES_FILE, []);
+        const msgIndex = allMessages.findIndex((m: any) => m.id === messageId);
+        
+        if (msgIndex !== -1) {
+          if (!allMessages[msgIndex].replies) allMessages[msgIndex].replies = [];
+          allMessages[msgIndex].replies.push(newReply);
+          allMessages[msgIndex].status = "replied";
+          await saveData(MESSAGES_FILE, allMessages);
+          repliedMessage = allMessages[msgIndex];
+          success = true;
+        }
+      }
+
+      if (success && repliedMessage) {
         // Send email notification to the user
-        const originalMessage = allMessages[msgIndex];
-        if (originalMessage.userEmail) {
+        if (repliedMessage.userEmail) {
           try {
             await sendEmail(
-              originalMessage.userEmail,
-              `Reply to your support message: ${originalMessage.subject}`,
-              `Hello ${originalMessage.userName || "user"},\n\nAn administrator has replied to your support message.\n\nReply:\n${reply}\n\nOriginal Message:\n${originalMessage.message}\n\nBest regards,\nASYMOG Team`
+              repliedMessage.userEmail,
+              `Reply to your support message: ${repliedMessage.subject}`,
+              `Hello ${repliedMessage.userName || "user"},\n\nAn administrator has replied to your support message.\n\nReply:\n${reply}\n\nOriginal Message:\n${repliedMessage.message}\n\nBest regards,\nASYMOG Team`
             );
           } catch (emailErr) {
             console.warn("Failed to send email reply notification:", emailErr);
           }
         }
 
-        res.json({ success: true, message: allMessages[msgIndex] });
+        res.json({ success: true, message: repliedMessage });
       } else {
         res.status(404).json({ error: "Message not found" });
       }
@@ -1397,8 +1513,13 @@ if (io) {
   app.delete("/api/admin/messages/:id", async (req, res) => {
     try {
       const { id } = req.params;
+      if (isSupabaseConfigured()) {
+         try {
+           await supabase.from('messages').delete().eq('id', id);
+         } catch(e) {}
+      }
       let allMessages = await loadData(MESSAGES_FILE, []);
-      allMessages = allMessages.filter((m: any) => m.id !== parseInt(id));
+      allMessages = allMessages.filter((m: any) => m.id !== parseInt(id) && m.id !== id);
       await saveData(MESSAGES_FILE, allMessages);
       res.json({ success: true });
     } catch (e) {
