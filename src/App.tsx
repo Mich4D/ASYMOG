@@ -45,6 +45,18 @@ export type User = {
   licForm?: any;
 };
 
+const optimizeImage = (url: string | null | undefined, width?: number) => {
+  if (!url) return "";
+  if (url.includes("res.cloudinary.com") && !url.includes("f_auto")) {
+    const parts = url.split("/upload/");
+    if (parts.length === 2) {
+      const transform = width ? `f_auto,q_auto,w_${width},c_limit` : "f_auto,q_auto";
+      return `${parts[0]}/upload/${transform}/${parts[1]}`;
+    }
+  }
+  return url;
+};
+
 const handleUniversalUpload = async (file: File, supabaseBucket: string): Promise<string> => {
   // First attempt Cloudinary via backend
   try {
@@ -89,13 +101,13 @@ const handleUniversalUpload = async (file: File, supabaseBucket: string): Promis
   });
 };
 
-type Page = "home" | "register" | "login" | "dashboard" | "meeting" | "admin" | "about" | "resources" | "verification";
+type Page = "home" | "register" | "login" | "dashboard" | "meeting" | "admin" | "about" | "resources" | "verification" | "executive-portal";
 
 const defaultTestimonials = [
-  { id: 1, name: "Pastor Solomon", text: "ASYMOG has strengthened my calling and grounded me in truth. The fellowship is unmatched.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/v1778155739/assymog_uploads/johpi8d58hbluscuxbky.jpg" },
-  { id: 2, name: "Pastor. Siminiye", text: "This association brought unity and clarity to my ministry. We are stronger together.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/v1778155785/assymog_uploads/qgpe05nuxoverioxdfbo.jpg" },
+  { id: 1, name: "Pastor Solomon", text: "ASYMOG has strengthened my calling and grounded me in truth. The fellowship is unmatched.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/f_auto,q_auto/v1778155739/assymog_uploads/johpi8d58hbluscuxbky.jpg" },
+  { id: 2, name: "Pastor. Siminiye", text: "This association brought unity and clarity to my ministry. We are stronger together.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/f_auto,q_auto/v1778155785/assymog_uploads/qgpe05nuxoverioxdfbo.jpg" },
   { id: 3, name: "Pastor Oluwasegun", text: "The monthly roll-ups and conferences have totally transformed my approach to leadership and pastoring.", image: "https://utgwqjmxelinswelqgwg.supabase.co/storage/v1/object/public/App_files/663a9w3wbt8_1778155879103.jpg" },
-  { id: 4, name: "Pastor Sunday", text: "A family of ministers where you are truly supported. Getting my ministerial license here was seamless.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/v1778156023/assymog_uploads/g1eiasyqovpus8wifyvr.jpg" },
+  { id: 4, name: "Pastor Sunday", text: "A family of ministers where you are truly supported. Getting my ministerial license here was seamless.", image: "https://res.cloudinary.com/dlg60ept3/image/upload/f_auto,q_auto/v1778156023/assymog_uploads/g1eiasyqovpus8wifyvr.jpg" },
   { id: 5, name: "Prophetess Deborah", text: "The cooperative hand has been a financial lifesaver for my ministry. ASYMOG truly cares for its own.", image: "https://i.pravatar.cc/150?img=32" },
   { id: 6, name: "Bishop Emmanuel", text: "Integrity and transparency are the hallmarks of this association. I'm proud to be one of the leaders.", image: "https://i.pravatar.cc/150?img=12" },
 ];
@@ -114,7 +126,7 @@ function SupportSection({ user }: { user: User }) {
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    fetch(`/api/messages/my/${user.email}`)
+    fetch(`/api/messages/my/${encodeURIComponent(user.email)}`)
       .then(res => res.json())
       .then(data => setMessages(Array.isArray(data) ? data : []))
       .catch(console.error)
@@ -353,7 +365,17 @@ function SupportMessagesAdmin() {
 }
 
 export default function App() {
-  const [currentPage, setCurrentPage] = useState<Page>("home");
+  const [currentPage, setCurrentPage] = useState<Page>(() => {
+    const path = window.location.pathname;
+    if (path === "/admin") return "admin";
+    if (path === "/verification") return "verification";
+    if (path === "/about") return "about";
+    if (path === "/resources") return "resources";
+    if (path === "/register") return "register";
+    if (path === "/login") return "login";
+    if (path === "/executive-portal") return "executive-portal";
+    return "home";
+  });
   const [user, setUser] = useState<User | null>(null);
   const [isMenuOpen, setIsMenuOpen] = useState(false);
   const [heroImage, setHeroImage] = useState("/hero-bg.jpg");
@@ -379,6 +401,13 @@ export default function App() {
   const [publicSearchResults, setPublicSearchResults] = useState<any[]>([]);
   const [searchingMembers, setSearchingMembers] = useState(false);
   
+  useEffect(() => {
+    const path = currentPage === "home" ? "/" : `/${currentPage}`;
+    if (window.location.pathname !== path) {
+      window.history.pushState({ page: currentPage }, "", path);
+    }
+  }, [currentPage]);
+
   const [networkVerified, setNetworkVerified] = useState(() => {
     return localStorage.getItem("assymog_network_verified") === "true";
   });
@@ -503,12 +532,26 @@ export default function App() {
       }
     };
 
+    const handlePopState = (e: PopStateEvent) => {
+      const path = window.location.pathname;
+      const pageBase = path.split("/")[1] || "home";
+      // Basic mapping
+      const validPages: Page[] = ["home", "register", "login", "dashboard", "meeting", "admin", "about", "resources", "verification", "executive-portal"];
+      if (validPages.includes(pageBase as Page)) {
+        setCurrentPage(pageBase as Page);
+      } else {
+        setCurrentPage("home");
+      }
+    };
+
     window.addEventListener("settings-updated", handleSettingsUpdated);
     window.addEventListener("trigger-public-search", handleTriggerSearch);
+    window.addEventListener("popstate", handlePopState);
     
     return () => {
       window.removeEventListener("settings-updated", handleSettingsUpdated);
       window.removeEventListener("trigger-public-search", handleTriggerSearch);
+      window.removeEventListener("popstate", handlePopState);
     };
   }, []);
 
@@ -639,7 +682,7 @@ export default function App() {
             id="nav-logo"
           >
             {logoImage ? (
-              <img src={logoImage} alt="ASYMOG Logo" referrerPolicy="no-referrer" className="w-10 h-10 object-contain group-hover:scale-110 transition-transform" />
+              <img src={optimizeImage(logoImage, 100)} alt="ASYMOG Logo" referrerPolicy="no-referrer" className="w-10 h-10 object-contain group-hover:scale-110 transition-transform" />
             ) : (
               <div className="w-10 h-10 bg-primary-theme rounded-lg flex items-center justify-center text-white font-serif font-bold text-xl shadow-lg group-hover:scale-110 transition-transform">
                 A
@@ -669,9 +712,12 @@ export default function App() {
             <button onClick={() => setCurrentPage("verification")} className="hover:text-primary-theme transition-colors px-2 py-1">Verification</button>
             <button onClick={() => setCurrentPage("about")} className="hover:text-primary-theme transition-colors px-2 py-1">About Us</button>
             <button onClick={() => setCurrentPage("resources")} className="hover:text-primary-theme transition-colors px-2 py-1">Library & Resources</button>
+            <button onClick={() => setCurrentPage("executive-portal")} className="hover:text-primary-theme transition-colors px-2 py-1 flex items-center gap-1">
+              <ShieldCheck size={16} className="text-primary-gold" />
+              <span>Board Portal</span>
+            </button>
             <button onClick={() => { setPublicSearchQuery(""); setPublicSearchResults([]); setShowSearchModal(true); }} className="hover:text-primary-theme transition-colors px-2 py-1">Find a Minister</button>
             <button onClick={() => alert("Events coming soon!")} className="hover:text-primary-theme transition-colors px-2 py-1">Events</button>
-            <button onClick={() => setCurrentPage("admin")} className="hover:text-primary-theme transition-colors px-2 py-1">Admin</button>
             {user ? (
               <>
                 <button onClick={() => setCurrentPage("dashboard")} className="hover:text-primary-theme transition-colors px-2 py-1">Dashboard</button>
@@ -721,7 +767,10 @@ export default function App() {
                 <button onClick={() => { setCurrentPage("verification"); setIsMenuOpen(false); }}>Verification</button>
                 <button onClick={() => { setCurrentPage("about"); setIsMenuOpen(false); }}>About Us</button>
                 <button onClick={() => { setCurrentPage("resources"); setIsMenuOpen(false); }}>Library & Resources</button>
-                <button onClick={() => { setCurrentPage("admin"); setIsMenuOpen(false); }}>Admin</button>
+                <button onClick={() => { setCurrentPage("executive-portal"); setIsMenuOpen(false); }} className="flex items-center gap-2">
+                  <ShieldCheck size={18} className="text-primary-gold" />
+                  <span>Board Portal</span>
+                </button>
                 {user ? (
                   <>
                     <button onClick={() => { setCurrentPage("dashboard"); setIsMenuOpen(false); }}>Dashboard</button>
@@ -748,6 +797,11 @@ export default function App() {
             setCurrentPage("dashboard"); 
             window.history.pushState({ loggedIn: true }, ""); 
           }} />}
+          {currentPage === "executive-portal" && <ExecutiveLoginPage onNavigate={setCurrentPage} onLogin={(u) => { 
+            setUser(u); 
+            setCurrentPage("dashboard"); 
+            window.history.pushState({ loggedIn: true }, ""); 
+          }} />}
           {currentPage === "dashboard" && user && (
             <DashboardPage 
               user={user} 
@@ -755,6 +809,7 @@ export default function App() {
               onDownload={generatePDF} 
               onNavigate={setCurrentPage} 
               onOpenSearch={() => setShowSearchModal(true)}
+              onLogout={logout}
               executiveDuesAmount={executiveDuesAmount}
               monthlyDuesAmount={monthlyDuesAmount}
               certificatePrice={certificatePrice}
@@ -776,6 +831,7 @@ export default function App() {
                 setCurrentPage("dashboard");
                 localStorage.setItem("assymog_user", JSON.stringify(exec));
               }}
+              onLogout={logout}
               heroImage={heroImage}
               logoImage={logoImage}
               presidentImage={presidentImage}
@@ -1002,7 +1058,7 @@ export default function App() {
               <div className="flex items-center gap-4 mb-6 relative">
                 {logoImage ? (
                   <div className="w-14 h-14 bg-white rounded-full flex items-center justify-center p-1 drop-shadow-[0_0_15px_rgba(255,255,255,0.2)] flex-shrink-0 border border-primary-gold overflow-hidden">
-                    <img src={logoImage} alt="ASYMOG" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain" />
+                    <img src={optimizeImage(logoImage, 200)} alt="ASYMOG" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain" />
                   </div>
                 ) : (
                   <div className="w-12 h-12 border border-primary-gold p-1 flex items-center justify-center rounded-full bg-gradient-to-br from-white/10 to-transparent shadow-[0_0_15px_rgba(212,175,55,0.2)]">
@@ -1207,7 +1263,7 @@ function ExecutiveTeam({ editable = false }: { editable?: boolean }) {
                     <span className="text-xs font-medium px-2 text-center">Uploading...</span>
                   </div>
                 ) : exec.image ? (
-                  <img src={exec.image} alt={exec.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  <img src={optimizeImage(exec.image, 600)} alt={exec.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" loading="lazy" />
                 ) : (
                   <div className="w-full h-full flex flex-col items-center justify-center text-gray-300 bg-gray-50">
                     <User size={40} className="mb-2" />
@@ -1279,7 +1335,7 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
       <section 
         className="relative min-h-[700px] flex items-center justify-center overflow-hidden bg-primary-theme text-white px-4 py-20"
         style={{
-          backgroundImage: `url('${heroImage}')`,
+          backgroundImage: `url('${optimizeImage(heroImage)}')`,
           backgroundSize: "cover",
           backgroundPosition: "center"
         }}
@@ -1294,7 +1350,7 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
           {/* Logo Element */}
           {logoImage ? (
             <div className="relative w-44 h-44 md:w-64 md:h-64 mb-8 z-40 bg-white/90 backdrop-blur-sm rounded-full border-4 border-primary-gold flex items-center justify-center overflow-hidden shadow-[0_10px_40px_rgba(212,175,55,0.3)]">
-               <img src={logoImage} alt="ASYMOG Logo" referrerPolicy="no-referrer" className="w-[120%] h-[120%] object-contain" />
+               <img src={optimizeImage(logoImage, 500)} alt="ASYMOG Logo" referrerPolicy="no-referrer" className="w-[120%] h-[120%] object-contain" />
             </div>
           ) : (
             <div className="relative w-32 h-32 md:w-40 md:h-40 mb-8 rounded-full border-4 border-[#FFAA00] bg-gradient-to-b from-[#003b80] to-[#001026] shadow-[0_10px_40px_rgba(255,170,0,0.3),inset_0_-10px_20px_rgba(0,0,0,0.8)] flex items-center justify-center z-40">
@@ -1422,7 +1478,7 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
             <div className="flex -space-x-3 mb-3">
               {testimonials.slice(0, 6).map((t, i) => (
                 <div key={i} className="w-10 h-10 rounded-full border-2 border-primary-gold overflow-hidden bg-gray-200">
-                  <img src={t.image} alt={t.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  <img src={optimizeImage(t.image, 80)} alt={t.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" loading="lazy" />
                 </div>
               ))}
               <div className="w-10 h-10 rounded-full border-2 border-primary-gold bg-primary-theme flex items-center justify-center text-[10px] font-bold text-primary-gold">
@@ -1636,7 +1692,7 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
                      </p>
                      <div className="flex items-center gap-4">
                        <div className="w-16 h-22 bg-gray-200 rounded-xl overflow-hidden border border-primary-gold/20 flex-shrink-0 shadow-sm">
-                         <img src={t.image} alt={t.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                         <img src={optimizeImage(t.image, 500)} alt={t.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                        </div>
                        <div className="min-w-0">
                          <p className="font-bold text-sm text-primary-theme truncate">{t.name}</p>
@@ -1674,7 +1730,7 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
                     <div key={rm.id} className="flex gap-4 items-start p-3 hover:bg-gray-50 rounded-xl transition-colors">
                       <div className="w-16 h-16 bg-primary-theme/5 rounded-lg flex-shrink-0 overflow-hidden border border-primary-gold/10 flex items-center justify-center">
                         {(rm as any).image ? (
-                          <img src={(rm as any).image} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                          <img src={optimizeImage((rm as any).image, 160)} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" loading="lazy" />
                         ) : (
                           <Calendar size={24} className="text-primary-gold" />
                         )}
@@ -1707,7 +1763,7 @@ function HomePage({ onNavigate, heroImage, logoImage, presidentImage, presidentN
                       <div key={ev.id || i} className="group flex gap-4 border-l-4 border-primary-gold pl-4 py-3 hover:bg-gray-50 transition-colors rounded-r-lg">
                         {(ev as any).image && (
                           <div className="w-20 h-20 bg-gray-100 rounded-lg overflow-hidden border border-gray-100 flex-shrink-0 hidden sm:block">
-                             <img src={(ev as any).image} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" />
+                             <img src={optimizeImage((ev as any).image, 200)} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover group-hover:scale-110 transition-transform duration-500" loading="lazy" />
                           </div>
                         )}
                         <div className="flex-1">
@@ -2105,6 +2161,95 @@ function LoginPage({ onNavigate, onLogin }: { onNavigate: (p: Page) => void, onL
   );
 }
 
+function ExecutiveLoginPage({ onNavigate, onLogin }: { onNavigate: (p: Page) => void, onLogin: (u: User) => void }) {
+  const [accessKey, setAccessKey] = useState("");
+  const [loading, setLoading] = useState(false);
+  const [error, setError] = useState("");
+
+  const handleSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    setLoading(true);
+    setError("");
+    try {
+      const res = await fetch("/api/executive-login", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ accessKey })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error);
+      localStorage.setItem("assymog_user", JSON.stringify(data.user));
+      onLogin(data.user);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return (
+    <motion.div 
+      initial={{ opacity: 0, scale: 0.95 }}
+      animate={{ opacity: 1, scale: 1 }}
+      className="flex-grow flex items-center justify-center p-6 bg-primary-theme/5"
+    >
+      <div className="bg-white p-8 md:p-12 rounded-[2.5rem] shadow-2xl w-full max-w-md border-t-8 border-primary-gold relative overflow-hidden">
+        <div className="absolute top-0 right-0 p-4 opacity-10">
+          <ShieldCheck size={120} className="text-primary-gold" />
+        </div>
+        
+        <div className="text-center mb-10 relative z-10">
+          <div className="w-20 h-20 bg-primary-gold/10 rounded-3xl flex items-center justify-center mx-auto mb-6">
+            <ShieldCheck size={40} className="text-primary-gold" />
+          </div>
+          <h2 className="font-serif text-3xl font-bold text-primary-theme mb-2">Executive Board</h2>
+          <p className="text-gray-500">Secure portal for ASYMOG Executives</p>
+        </div>
+
+        {error && <div className="bg-red-50 text-red-500 p-4 rounded-xl mb-6 text-sm font-bold border border-red-100 flex items-center gap-2">
+          <X size={16} />
+          {error}
+        </div>}
+
+        <form onSubmit={handleSubmit} className="space-y-6 relative z-10">
+          <div className="space-y-2">
+            <label className="text-xs font-bold uppercase tracking-widest text-primary-gold ml-1">Member Access Key</label>
+            <div className="relative">
+              <Lock size={18} className="absolute left-4 top-1/2 -translate-y-1/2 text-gray-400" />
+              <input 
+                required
+                type="password" 
+                className="w-full pl-12 pr-4 py-5 bg-gray-50 rounded-2xl border-2 border-transparent focus:border-primary-gold/50 focus:bg-white focus:ring-4 focus:ring-primary-gold/5 transition-all outline-none font-mono text-center text-xl tracking-[0.5em]"
+                placeholder="••••••••"
+                value={accessKey}
+                onChange={e => setAccessKey(e.target.value)}
+              />
+            </div>
+            <p className="text-[10px] text-gray-400 text-center mt-2 px-4 italic">
+              Please enter the 8-character secure key sent to your registered email address.
+            </p>
+          </div>
+
+          <button 
+            type="submit"
+            disabled={loading || accessKey.length < 4}
+            className="w-full bg-primary-theme text-white py-5 rounded-2xl font-bold text-lg hover:bg-black transition-all shadow-xl shadow-primary-theme/20 active:scale-95 disabled:opacity-50 flex items-center justify-center gap-3"
+          >
+            {loading ? <Loader2 className="animate-spin" /> : "Access Portal"}
+          </button>
+        </form>
+
+        <div className="mt-10 pt-8 border-t border-gray-100 flex flex-col gap-4 text-center">
+          <button onClick={() => onNavigate("login")} className="text-sm font-bold text-gray-500 hover:text-primary-theme transition-colors">
+            Back to General Login
+          </button>
+          <p className="text-[10px] text-gray-400 font-bold uppercase tracking-widest">Official Board Access Only</p>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 const NIGERIAN_STATES = [
   "Abia", "Adamawa", "Akwa Ibom", "Anambra", "Bauchi", "Bayelsa", "Benue", "Borno", "Cross River", "Delta", "Ebonyi", "Edo", "Ekiti", "Enugu", "Gombe", "Imo", "Jigawa", "Kaduna", "Kano", "Katsina", "Kebbi", "Kogi", "Kwara", "Lagos", "Nasarawa", "Niger", "Ogun", "Ondo", "Osun", "Oyo", "Plateau", "Rivers", "Sokoto", "Taraba", "Yobe", "Zamfara", "Federal Capital Territory"
 ];
@@ -2311,6 +2456,7 @@ function DashboardPage({
   onDownload, 
   onNavigate, 
   onOpenSearch, 
+  onLogout,
   executiveDuesAmount,
   monthlyDuesAmount,
   certificatePrice,
@@ -2325,6 +2471,7 @@ function DashboardPage({
   onDownload: (t: "certificate" | "license") => void, 
   onNavigate: (p: Page) => void, 
   onOpenSearch: () => void, 
+  onLogout: () => void,
   executiveDuesAmount: number,
   monthlyDuesAmount: number,
   certificatePrice: number,
@@ -2347,6 +2494,12 @@ function DashboardPage({
   const [resources, setResources] = useState<any[]>([]);
   const [coopHands, setCoopHands] = useState(user.cooperativeHands || 1);
   const [activeDashTab, setActiveDashTab] = useState<"dashboard" | "support" | "executive_portal">("dashboard");
+
+  useEffect(() => {
+    if (user.userType === "executive") {
+      setActiveDashTab("executive_portal");
+    }
+  }, [user.userType]);
 
   const [certStage, setCertStage] = useState(1);
   const [licStage, setLicStage] = useState(1);
@@ -2599,7 +2752,7 @@ function DashboardPage({
     setPayingDues(true);
     try {
       // Securely verify on server
-      const verifyRes = await fetch(`/api/verify-payment/${reference}`);
+      const verifyRes = await fetch(`/api/verify-payment/${encodeURIComponent(reference)}`);
       const verifyData = await verifyRes.json();
       
       if (!verifyData.success) {
@@ -2691,7 +2844,7 @@ function DashboardPage({
     setPayingCoop(true);
     try {
       // Securely verify on server
-      const verifyRes = await fetch(`/api/verify-payment/${reference}`);
+      const verifyRes = await fetch(`/api/verify-payment/${encodeURIComponent(reference)}`);
       const verifyData = await verifyRes.json();
       
       if (!verifyData.success) {
@@ -2738,7 +2891,7 @@ function DashboardPage({
       
       try {
         // Verify payment on server first
-        const verifyRes = await fetch(`/api/verify-payment/${reference}`);
+        const verifyRes = await fetch(`/api/verify-payment/${encodeURIComponent(reference)}`);
         const verifyData = await verifyRes.json();
         
         if (!verifyData.success) {
@@ -2895,6 +3048,17 @@ function DashboardPage({
             <div className="text-left hidden sm:block">
               <p className="text-[10px] font-bold uppercase tracking-widest text-indigo-200">Live</p>
               <p className="font-medium">Join Meeting Room</p>
+            </div>
+          </button>
+
+          <button 
+            onClick={onLogout}
+            className="flex items-center space-x-3 bg-red-50 text-red-600 px-6 py-4 rounded-2xl shadow-sm hover:bg-red-100 transition-colors active:scale-95 border border-red-100"
+          >
+            <LogOut size={24} />
+            <div className="text-left hidden sm:block">
+              <p className="text-[10px] font-bold uppercase tracking-widest text-red-400">Exit</p>
+              <p className="font-bold">Sign Out</p>
             </div>
           </button>
         </div>
@@ -4032,6 +4196,14 @@ function DashboardPage({
                               headers: { 'Content-Type': 'application/json' },
                               body: JSON.stringify({ idNumber: licForm.nin })
                            });
+                           
+                           const contentType = res.headers.get("content-type");
+                           if (!contentType || !contentType.includes("application/json")) {
+                              const text = await res.text();
+                              console.error("Non-JSON identity verification response:", text.substring(0, 500));
+                              throw new Error("Identity verification service is temporarily unavailable. Please retry in a few moments.");
+                           }
+
                            const data = await res.json();
                            if (data.success) {
                               setLicForm(prev => ({
@@ -4686,7 +4858,7 @@ function PlatformSettings({
           <div className="flex flex-col md:flex-row gap-8 items-start">
             <div className="w-full md:w-1/3 h-48 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center p-4 relative overflow-hidden">
               {logoImage ? (
-                <img src={logoImage} alt="Website Logo" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain" />
+                <img src={optimizeImage(logoImage, 100)} alt="Website Logo" referrerPolicy="no-referrer" className="max-w-full max-h-full object-contain" />
               ) : (
                 <div className="w-16 h-16 bg-primary-theme rounded-lg flex items-center justify-center text-white font-serif font-bold text-3xl shadow-lg">
                   A
@@ -4776,7 +4948,7 @@ function PlatformSettings({
           <div className="flex flex-col md:flex-row gap-8 items-start">
             <div className="w-48 h-64 rounded-2xl bg-gray-50 border border-gray-200 flex items-center justify-center p-1 relative overflow-hidden bg-gradient-to-br from-primary-gold to-yellow-600 shadow-md">
               {presidentImage ? (
-                <img src={presidentImage} alt="President" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                <img src={optimizeImage(presidentImage, 400)} alt="President" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
               ) : (
                 <User size={80} className="text-white opacity-90" />
               )}
@@ -5043,7 +5215,7 @@ function PlatformSettings({
              <div className="flex flex-col md:flex-row gap-8 items-center md:items-start">
                <div className="w-24 h-32 rounded-2xl bg-white border-2 border-dashed border-gray-300 flex items-center justify-center relative overflow-hidden flex-shrink-0 group">
                   {newExecImage ? (
-                    <img src={newExecImage} alt="Preview" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                    <img src={optimizeImage(newExecImage, 400)} alt="Preview" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                   ) : (
                     <div className="flex flex-col items-center justify-center text-gray-400">
                        <Camera size={24} />
@@ -5119,7 +5291,7 @@ function PlatformSettings({
                     <div key={exec.id} className="bg-white p-5 rounded-2xl border border-gray-100 shadow-sm flex items-center gap-4 group">
                        <div className="w-16 h-22 rounded-xl overflow-hidden bg-gray-50 flex-shrink-0 border border-gray-100">
                           {exec.image ? (
-                            <img src={exec.image} alt={exec.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                            <img src={optimizeImage(exec.image, 200)} alt={exec.name} referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                           ) : (
                             <div className="w-full h-full flex items-center justify-center text-gray-300">
                                <User size={20} />
@@ -5189,7 +5361,7 @@ function PlatformSettings({
                          <label className="text-[10px] font-bold text-primary-gold uppercase block mb-1">Banner Image</label>
                          <div className="relative h-24 bg-white border border-gray-200 rounded-xl overflow-hidden group/img">
                             {(rm as any).image ? (
-                              <img src={(rm as any).image} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                              <img src={optimizeImage((rm as any).image, 200)} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-gray-300">
                                  <Camera size={20} />
@@ -5331,7 +5503,7 @@ function PlatformSettings({
                          <label className="text-[10px] font-bold text-primary-gold uppercase block mb-1">Banner Image</label>
                          <div className="relative h-32 bg-white border border-gray-200 rounded-xl overflow-hidden group/img">
                             {(ev as any).image ? (
-                              <img src={(ev as any).image} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                              <img src={optimizeImage((ev as any).image, 200)} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                             ) : (
                               <div className="w-full h-full flex items-center justify-center text-gray-300">
                                  <Camera size={24} />
@@ -5467,7 +5639,7 @@ function PlatformSettings({
                 <div key={t.id} className="p-4 border border-gray-200 rounded-3xl bg-gray-50 flex flex-col md:flex-row gap-6 items-center md:items-start relative group">
                   <div className="flex-shrink-0 w-20 h-28 bg-white rounded-2xl border border-gray-200 overflow-hidden shadow-sm relative">
                     {t.image ? (
-                      <img src={t.image} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                      <img src={optimizeImage(t.image, 200)} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                     ) : (
                       <div className="w-full h-full flex items-center justify-center bg-gray-100">
                         <User size={24} className="text-gray-300" />
@@ -5941,6 +6113,7 @@ function FinanceDashboard({ users }: { users: User[] }) {
 function AdminDashboardPage({ 
   onNavigate, 
   onLoginExecutive,
+  onLogout,
   cooperativeHandPrice,
   cooperativeGraceDay,
   cooperativeFineAmount,
@@ -5961,6 +6134,7 @@ function AdminDashboardPage({
 }: { 
   onNavigate: (p: Page) => void; 
   onLoginExecutive: (user: any) => void;
+  onLogout: () => void;
   cooperativeHandPrice: number;
   cooperativeGraceDay: number;
   cooperativeFineAmount: number;
@@ -5994,6 +6168,7 @@ function AdminDashboardPage({
   const [updatingUser, setUpdatingUser] = useState(false);
   const [filterState, setFilterState] = useState("");
   const [filterPosition, setFilterPosition] = useState<"All" | "Member" | "Executive">("All");
+  const [filterStatus, setFilterStatus] = useState<"All" | "Pending" | "Approved" | "Rejected">("All");
   const [searchQuery, setSearchQuery] = useState("");
 
   const [resources, setResources] = useState<any[]>([]);
@@ -6286,7 +6461,15 @@ function AdminDashboardPage({
           <h1 className="font-serif text-5xl font-bold text-primary-theme mb-2">Admin Dashboard</h1>
           <p className="text-xl text-gray-500">Manage Ministers and Platform Settings</p>
         </div>
-        <div className="flex gap-4">
+        <div className="flex items-center gap-4">
+           <button 
+             onClick={onLogout}
+             className="flex items-center gap-2 px-6 py-3 bg-red-50 text-red-600 rounded-xl font-bold hover:bg-red-100 transition-colors border border-red-100 shadow-sm"
+           >
+             <LogOut size={20} />
+             <span>Sign Out</span>
+           </button>
+
            <div className="flex items-center space-x-4 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-primary-gold/5">
             <div className="w-12 h-12 bg-primary-gold/10 text-primary-gold rounded-full flex items-center justify-center">
               <User size={24} />
@@ -6296,6 +6479,23 @@ function AdminDashboardPage({
               <p className="font-medium text-2xl">{users.length}</p>
             </div>
           </div>
+          
+          <div 
+            className="flex items-center space-x-4 bg-white p-4 sm:p-6 rounded-2xl shadow-sm border border-yellow-500/20 cursor-pointer hover:bg-yellow-50 transition-colors group"
+            onClick={() => { 
+                setActiveTab("members"); 
+                setFilterStatus("Pending");
+                document.getElementById('ministers-table')?.scrollIntoView({ behavior: 'smooth' });
+            }}
+          >
+            <div className="w-12 h-12 bg-yellow-500/10 text-yellow-600 rounded-full flex items-center justify-center group-hover:scale-110 transition-transform">
+              <ShieldCheck size={24} />
+            </div>
+            <div>
+              <p className="text-xs font-bold uppercase tracking-widest text-gray-400">Pending Approvals</p>
+              <p className="font-medium text-2xl">{users.filter(u => u.status === 'pending').length}</p>
+            </div>
+          </div>
         </div>
       </header>
 
@@ -6303,9 +6503,14 @@ function AdminDashboardPage({
       <div className="flex space-x-2 mb-8 bg-white p-2 rounded-2xl border border-primary-gold/10 w-full sm:w-auto overflow-x-auto shadow-sm">
         <button 
           onClick={() => setActiveTab("members")}
-          className={`flex-1 sm:flex-none px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap ${activeTab === "members" ? "bg-primary-theme text-white shadow-md" : "text-gray-500 hover:bg-gray-50"}`}
+          className={`flex-1 sm:flex-none px-6 py-3 rounded-xl font-bold transition-all whitespace-nowrap flex items-center gap-2 ${activeTab === "members" ? "bg-primary-theme text-white shadow-md" : "text-gray-500 hover:bg-gray-50"}`}
         >
-          Registered Ministers
+          <span>Registered Ministers</span>
+          {users.filter(u => u.status === 'pending').length > 0 && (
+            <span className="bg-yellow-500 text-white text-[10px] px-1.5 py-0.5 rounded-full animate-pulse">
+              {users.filter(u => u.status === 'pending').length}
+            </span>
+          )}
         </button>
         {adminRole === 'admin' && (
           <button 
@@ -6354,7 +6559,7 @@ function AdminDashboardPage({
       ) : loading ? (
         <div className="text-center py-20 text-gray-500">Loading directory...</div>
       ) : activeTab === "members" ? (
-        <div className="bg-white rounded-[2rem] shadow-xl border border-primary-gold/10 overflow-hidden">
+        <div id="ministers-table" className="bg-white rounded-[2rem] shadow-xl border border-primary-gold/10 overflow-hidden scroll-mt-8">
           <div className="p-8 border-b border-gray-100 bg-off-white flex flex-col md:flex-row md:items-center justify-between gap-4">
             <h3 className="font-serif text-2xl font-bold text-primary-theme">Registered Ministers</h3>
             
@@ -6369,6 +6574,17 @@ function AdminDashboardPage({
                   className="pl-9 pr-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-theme/20 outline-none w-full md:w-64"
                 />
               </div>
+
+              <select 
+                value={filterStatus} 
+                onChange={(e) => setFilterStatus(e.target.value as any)}
+                className="px-4 py-2 bg-white border border-gray-200 rounded-xl text-sm focus:ring-2 focus:ring-primary-theme/20 outline-none font-bold"
+              >
+                <option value="All">All Status</option>
+                <option value="Pending">Pending Approvals</option>
+                <option value="Approved">Approved</option>
+                <option value="Rejected">Rejected</option>
+              </select>
 
               <select 
                 value={filterState} 
@@ -6407,16 +6623,17 @@ function AdminDashboardPage({
                 {users.filter(u => {
                   const matchesState = filterState === "" || (u.certForm?.stateOfOrigin === filterState);
                   const matchesPos = filterPosition === "All" || (u.certForm?.assymogPosition === filterPosition);
+                  const matchesStatus = filterStatus === "All" || (u.status?.toLowerCase() === filterStatus.toLowerCase());
                   const matchesSearch = searchQuery === "" || 
                     u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                     u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
                     (u.registrationNumber || "").toLowerCase().includes(searchQuery.toLowerCase());
-                  return matchesState && matchesPos && matchesSearch;
+                  return matchesState && matchesPos && matchesSearch && matchesStatus;
                 })
                 .sort((a, b) => (a.registrationNumber || "").localeCompare(b.registrationNumber || ""))
                 .length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="py-8 px-6 text-center text-gray-400">
+                    <td colSpan={7} className="py-8 px-6 text-center text-gray-400">
                       No ministers matching these filters found.
                     </td>
                   </tr>
@@ -6424,19 +6641,20 @@ function AdminDashboardPage({
                   users.filter(u => {
                     const matchesState = filterState === "" || (u.certForm?.stateOfOrigin === filterState);
                     const matchesPos = filterPosition === "All" || (u.certForm?.assymogPosition === filterPosition);
+                    const matchesStatus = filterStatus === "All" || (u.status?.toLowerCase() === filterStatus.toLowerCase());
                     const matchesSearch = searchQuery === "" || 
                       u.fullName.toLowerCase().includes(searchQuery.toLowerCase()) || 
                       u.email.toLowerCase().includes(searchQuery.toLowerCase()) ||
                       (u.registrationNumber || "").toLowerCase().includes(searchQuery.toLowerCase());
-                    return matchesState && matchesPos && matchesSearch;
+                    return matchesState && matchesPos && matchesSearch && matchesStatus;
                   })
                   .sort((a, b) => (a.registrationNumber || "").localeCompare(b.registrationNumber || ""))
                   .map((u, i) => (
-                    <tr key={u.id || i} className="border-b border-gray-50 hover:bg-gray-50 transition-colors">
+                    <tr key={u.id || i} className={`border-b border-gray-50 hover:bg-gray-50 transition-colors ${u.status === 'pending' ? 'bg-yellow-50/50' : ''}`}>
                       <td className="py-4 px-6">
                         <div className="w-10 h-10 rounded-full bg-gray-100 overflow-hidden border border-gray-100 flex items-center justify-center">
                            {u.certForm?.profilePicture ? (
-                             <img src={u.certForm.profilePicture} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                             <img src={optimizeImage(u.certForm.profilePicture, 200)} alt="" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
                            ) : (
                              <User size={16} className="text-gray-300" />
                            )}
@@ -6841,7 +7059,16 @@ function VerificationPage({ onNavigate }: { onNavigate: (p: Page) => void }) {
     setError("");
     setResult(null);
     try {
-      const res = await fetch(`/api/verify-document/${docId.trim()}`);
+      const encodedId = encodeURIComponent(docId.trim());
+      const res = await fetch(`/api/verify-document/${encodedId}`);
+      
+      const contentType = res.headers.get("content-type");
+      if (!contentType || !contentType.includes("application/json")) {
+        const text = await res.text();
+        console.error("Non-JSON verification response:", text.substring(0, 500));
+        throw new Error("Unable to reach verification server. The system might be under maintenance or restarting. Please try again in 10-20 seconds.");
+      }
+
       const data = await res.json();
       if (!res.ok) throw new Error(data.error);
       setResult(data);
@@ -7028,7 +7255,7 @@ function AboutPage({ onNavigate, presidentImage, presidentName, logoImage }: { o
     >
       <div className="bg-primary-theme text-white py-20 px-4 text-center">
         {logoImage ? (
-          <img src={logoImage} alt="ASYMOG Logo" referrerPolicy="no-referrer" className="h-24 md:h-32 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] object-contain" />
+          <img src={optimizeImage(logoImage, 300)} alt="ASYMOG Logo" referrerPolicy="no-referrer" className="h-24 md:h-32 mx-auto mb-6 drop-shadow-[0_0_15px_rgba(255,255,255,0.3)] object-contain" />
         ) : (
           <div className="w-24 h-24 md:w-32 md:h-32 rounded-full bg-white/10 mx-auto flex items-center justify-center mb-6">
             <span className="text-white/50 text-2xl font-bold">Logo</span>
@@ -7065,7 +7292,7 @@ function AboutPage({ onNavigate, presidentImage, presidentName, logoImage }: { o
             <div className="flex flex-col md:flex-row items-center gap-8 bg-primary-theme/5 p-8 rounded-3xl border border-primary-gold/20">
               <div className="flex-shrink-0 w-48 h-64 rounded-xl bg-gradient-to-br from-primary-gold to-yellow-600 flex items-center justify-center border-4 border-white shadow-lg overflow-hidden relative">
                 {presidentImage ? (
-                  <img src={presidentImage} alt="President" referrerPolicy="no-referrer" className="w-full h-full object-cover" />
+                  <img src={optimizeImage(presidentImage, 600)} alt="President" referrerPolicy="no-referrer" className="w-full h-full object-cover" loading="lazy" />
                 ) : (
                   <User size={80} className="text-white opacity-90" />
                 )}

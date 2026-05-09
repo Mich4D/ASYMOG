@@ -167,11 +167,11 @@ const isCloudinaryConfigured = () => {
 };
 
 // Supabase setup
-const rawSupabaseUrl = process.env.SUPABASE_URL || "";
+const rawSupabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || "";
 // Sanitize URL: remove trailing slashes and /rest/v1 if present
 const supabaseUrl = rawSupabaseUrl.replace(/\/+$/, "").replace(/\/rest\/v1$/, "");
 // Prefer Service Role Key on the server to bypass RLS for administrative tasks
-const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || "";
+const supabaseKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_ANON_KEY || process.env.VITE_SUPABASE_ANON_KEY || "";
 
 // Utility to check if Supabase is likely configured
 const isSupabaseConfigured = () => {
@@ -190,12 +190,13 @@ try {
 
 // Group all startup initialization logic
 async function runInitializations() {
-    console.log("Starting platform initializations...");
+    console.log("🚀 Starting platform initializations...");
     try {
-        // Initialize Cloudinary (which may depend on Supabase if settings are stored there).
+        // Initialize Cloudinary
         await initializeCloudinary();
 
         // Initial default setup
+        console.log("Checking settings...");
         let settings = await loadData(SETTINGS_FILE, null);
         if (!settings) {
             console.log("Creating default settings file...");
@@ -214,15 +215,19 @@ async function runInitializations() {
                 testimonials: []
             };
             await saveData(SETTINGS_FILE, defaultSettings);
-            console.log("Default settings created.");
+            console.log("✅ Default settings created.");
         }
 
-        // Check Supabase health
-        await checkSupabaseHealth();
+        // Check Supabase health with timeout
+        console.log("Checking Supabase health...");
+        const healthTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase health check timeout")), 5000));
+        await Promise.race([checkSupabaseHealth(), healthTimeout]).catch(err => {
+          console.warn("⚠️ Supabase health check failed or timed out:", err.message);
+        });
         
-        console.log("Platform initializations completed.");
+        console.log("✅ Platform initializations completed.");
     } catch (err) {
-        console.error("Error during initializations:", err);
+        console.error("❌ Error during initializations:", err);
     }
 }
 
@@ -273,7 +278,7 @@ async function loadData(key: string, _default: any) {
   try {
     // Add a race to prevent hanging indefinitely
     const supabaseRequest = supabase.from('kv_store').select('value').eq('key', key).single();
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase timeout")), 8000));
+    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase timeout")), 3000));
     
     const { data, error } = (await Promise.race([supabaseRequest, timeoutPromise])) as any;
 
@@ -361,6 +366,42 @@ async function saveData(key: string, data: any) {
   }
 }
 
+async function addSystemMessage(userEmail: string, subject: string, message: string) {
+  try {
+    const allMessages = await loadData(MESSAGES_FILE, []);
+    const newMessage = {
+      id: Date.now(),
+      userEmail,
+      userName: "Minister",
+      subject,
+      message: "Automated System Notification",
+      replies: [
+        {
+          id: Date.now() + 1,
+          sender: "ASYMOG Admin",
+          message,
+          createdAt: new Date().toISOString()
+        }
+      ],
+      status: "replied",
+      createdAt: new Date().toISOString()
+    };
+    
+    try {
+      const users = await loadData(USERS_FILE, []);
+      const user = users.find((u: any) => u.email === userEmail);
+      if (user) newMessage.userName = user.fullName;
+    } catch (e) {}
+
+    allMessages.unshift(newMessage);
+    await saveData(MESSAGES_FILE, allMessages);
+    return true;
+  } catch (e) {
+    console.error("Failed to add system message:", e);
+    return false;
+  }
+}
+
 async function checkSupabaseHealth() {
   if (!isSupabaseConfigured()) {
     console.error("Supabase is NOT configured correctly. Check your environment variables.");
@@ -402,18 +443,37 @@ const PORT = 3000;
 let httpServer: any;
 let io: any;
 
-if (!process.env.VERCEL) {
-  httpServer = createServer(app);
-  io = new Server(httpServer, {
-    cors: {
-      origin: "*",
-      methods: ["GET", "POST"]
-    }
-  });
-}
+httpServer = createServer(app);
+io = new Server(httpServer, {
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
+});
+
+let initPromise = runInitializations().catch((e) => {
+  console.error("Critical initialization failure:", e);
+});
+
+// Middleware to ensure initializations complete before handling API requests
+app.use(async (req, res, next) => {
+  if (initPromise && req.path.startsWith('/api/')) {
+    await initPromise;
+  }
+  next();
+});
 
 app.use(cors());
 app.use(express.json({ limit: "50mb" }));
+
+// DEBUG LOGGING
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/')) {
+    console.log(`[API Request] ${req.method} ${req.path}`);
+  }
+  next();
+});
+
 app.use("/uploads", express.static(uploadsDir));
 
 // Health check
@@ -679,6 +739,12 @@ if (io) {
       const newExec = { id: Date.now(), name, role, email, phone, accessKey, createdAt: new Date().toISOString() };
       execs.push(newExec);
       await saveData(EXECUTIVES_LIST_FILE, execs);
+
+      // NEW: Send executive appointment email
+      const emailBody = `Dear ${name},\n\nYou have been officially appointed as a member of the ASYMOG Executive Board.\n\nPosition: ${role}\nExecutive Access Key: ${accessKey}\n\nThis Access Key allows you to log in to the Executive portal to manage your profile and access executive resources.\n\nPortal Login: ${process.env.APP_URL || "https://asymog-portal.vercel.app"}/login\n\nCongratulations on your appointment.\n\nGod bless your ministry.\n\nASYMOG Secretariat`;
+      
+      sendEmail(email, `ASYMOG Executive Board Appointment - ${role}`, emailBody).catch(e => console.error("Email error:", e));
+
       res.json(newExec);
     } catch (e) {
       res.status(500).json({ error: "Failed to create executive" });
@@ -740,6 +806,18 @@ if (io) {
       const newPayment = { id: Date.now(), accessKey, amount, reference, month, year, datePaid };
       payments.push(newPayment);
       await saveData(EXECUTIVE_PAYMENTS_FILE, payments);
+      
+      // Send system message
+      try {
+        const execs = await loadData(EXECUTIVES_FILE, []);
+        const exec = execs.find((e: any) => e.accessKey === accessKey);
+        if (exec && exec.email) {
+          const subject = `Board Dues Confirmed - ${month} ${year}`;
+          const msg = `Hello, your payment of ₦${amount} for ASYMOG Board Dues (${month} ${year}) has been confirmed. Thank you for your commitment. \n\nReference: ${reference}`;
+          addSystemMessage(exec.email, subject, msg);
+        }
+      } catch (e) {}
+
       res.json({ success: true, payment: newPayment });
     } catch (e) {
       res.status(500).json({ error: "Payment failed" });
@@ -902,6 +980,56 @@ if (io) {
     }
   });
 
+  app.post("/api/executive-login", async (req, res) => {
+    const { accessKey } = req.body;
+    if (!accessKey) return res.status(400).json({ error: "Access Key required" });
+
+    try {
+      // 1. Check special executives list
+      const execs = await loadData(EXECUTIVES_LIST_FILE, []);
+      const exec = execs.find((e: any) => e.accessKey === accessKey);
+      
+      if (exec) {
+        return res.json({ 
+          user: { 
+            id: `exec_${exec.id}`,
+            fullName: exec.name, 
+            email: exec.email, 
+            churchName: "ASYMOG Board",
+            role: exec.role,
+            status: "approved",
+            userType: "executive",
+            accessKey: exec.accessKey
+          } 
+        });
+      }
+
+      // 2. Check main users list
+      const users = await loadData(USERS_FILE, []);
+      const user = users.find((u: any) => u.accessKey === accessKey && u.userType === 'executive');
+
+      if (user) {
+        return res.json({ 
+          user: { 
+            id: user.id,
+            fullName: user.fullName, 
+            email: user.email, 
+            churchName: user.churchName,
+            role: user.role,
+            status: user.status || "approved",
+            userType: "executive",
+            registrationNumber: user.registrationNumber,
+            accessKey: user.accessKey
+          } 
+        });
+      }
+
+      res.status(401).json({ error: "Invalid Access Key or account not authorized for Board Portal" });
+    } catch (e) {
+      res.status(500).json({ error: "Login failed" });
+    }
+  });
+
   app.post("/api/login", async (req, res) => {
     const { email, password } = req.body;
     try {
@@ -1003,6 +1131,7 @@ if (io) {
       const users = await loadData(USERS_FILE, []);
       const userIndex = users.findIndex((u: any) => u.email === email);
       if (userIndex !== -1) {
+        const oldStatus = users[userIndex].status;
         if (status) users[userIndex].status = status;
         if (certificateData !== undefined) users[userIndex].certificateData = certificateData;
         if (licenseData !== undefined) users[userIndex].licenseData = licenseData;
@@ -1017,10 +1146,58 @@ if (io) {
         if (accessKey !== undefined) users[userIndex].accessKey = accessKey;
         await saveData(USERS_FILE, users);
         success = true;
+
+        // NEW: Send approval email
+        if (status === "approved" && oldStatus !== "approved") {
+          const updatedUser = users[userIndex];
+          const regNum = updatedUser.registrationNumber || "N/A";
+          const uName = updatedUser.fullName || "Minister";
+          const uType = updatedUser.userType || "member";
+          const uRole = updatedUser.role || "Member";
+          const aKey = updatedUser.accessKey || "";
+          
+          let emailBody = `Dear ${uName},\n\nCongratulations! Your registration with the Association of Yoruba Ministers of God (ASYMOG) has been approved.\n\n`;
+          
+          if (uType === 'executive' && aKey) {
+            emailBody += `You have been officially appointed as a member of the ASYMOG Board.\n`;
+            emailBody += `Position: ${uRole}\n`;
+            emailBody += `Executive Access Key: ${aKey}\n\n`;
+            emailBody += `You can use this Access Key to log in to the Executive Board Portal.\n\n`;
+          } else {
+            emailBody += `Your Official Registration Number is: ${regNum}\n\n`;
+          }
+          
+          emailBody += `You can now log in to the ASYMOG Member Portal to access resources, generate your certificate, and download your ministerial license.\n\n`;
+          emailBody += `Portal Login: ${process.env.APP_URL || "https://asymog-portal.vercel.app"}/login\n\n`;
+          emailBody += `God bless your ministry.\n\nASYMOG Secretariat`;
+
+          const subject = uType === 'executive' ? `ASYMOG Executive Appointment - ${uRole}` : `ASYMOG Registration Approved - ${regNum}`;
+          
+          sendEmail(email, subject, emailBody).catch(e => console.error("Email send error:", e));
+        }
       }
     } catch (err) {}
 
     if (success) {
+      // Document Payment Notifications
+      if (req.body.certificatePayment) {
+        const certPaymentRef = req.body.certificatePayment.reference;
+        const certPaymentSub = "Certificate Payment Confirmed";
+        const certPaymentDDate = new Date();
+        certPaymentDDate.setDate(certPaymentDDate.getDate() + 14);
+        const certPaymentDStr = certPaymentDDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        const certPaymentText = `Your payment for ASYMOG Membership Certificate was successful. \n\nTracking Number: ${certPaymentRef}\nScheduled Download Date: ${certPaymentDStr}\n\nPlease visit your dashboard on or after this date to download your digital certificate.`;
+        addSystemMessage(email, certPaymentSub, certPaymentText);
+      }
+      if (req.body.licensePayment) {
+        const licPaymentRef = req.body.licensePayment.reference;
+        const licPaymentSub = "Ministerial License Payment Confirmed";
+        const licPaymentDDate = new Date();
+        licPaymentDDate.setDate(licPaymentDDate.getDate() + 14);
+        const licPaymentDStr = licPaymentDDate.toLocaleDateString('en-GB', { day: 'numeric', month: 'long', year: 'numeric' });
+        const licPaymentText = `Your payment for International Ministerial License was successful. \n\nTracking Number: ${licPaymentRef}\nScheduled Download Date: ${licPaymentDStr}\n\nPlease visit your dashboard on or after this date to download your digital license.`;
+        addSystemMessage(email, licPaymentSub, licPaymentText);
+      }
       res.json({ success: true });
     } else {
       res.status(404).json({ error: "User not found or could not be updated" });
@@ -1087,6 +1264,9 @@ if (io) {
     } catch (e) {}
 
     if (success) {
+      const subject = `Monthly Dues Confirmed - ${month} ${year}`;
+      const msg = `Hello, your payment of ₦${amount} for ASYMOG Monthly Dues (${month} ${year}) has been confirmed. \n\nReference: ${reference}`;
+      addSystemMessage(email, subject, msg);
       res.json({ success: true, payment: newPayment });
     } else {
       res.status(404).json({ error: "User not found" });
@@ -1242,6 +1422,9 @@ if (io) {
     } catch (e) {}
 
     if (success) {
+      const subject = `Cooperative Contribution Confirmed - ${month} ${year}`;
+      const msg = `Hello, your contribution of ₦${amount} for ASYMOG Cooperative (${hands} hands) has been received. \n\nReference: ${reference}`;
+      addSystemMessage(email, subject, msg);
       res.json({ success: true, payment: newPayment });
     } else {
       res.status(404).json({ error: "User not found" });
@@ -1281,7 +1464,8 @@ if (io) {
   });
 
   app.get("/api/verify-document/:id", async (req, res) => {
-    const { id } = req.params;
+    const id = decodeURIComponent(req.params.id);
+    console.log(`[Verify] Verifying document ID: ${id}`);
     let users: any[] = [];
     try {
       users = await loadData(USERS_FILE, []);
@@ -1582,39 +1766,32 @@ app.use((err: any, req: any, res: any, next: any) => {
   });
 });
 
-// Export for Vercel Serverless Function
-  export default app;
+// Local server listening logic
+async function startServer() {
+  // vite instance is now dynamically imported
+  if (process.env.NODE_ENV !== "production" && createViteServer) {
+    const vite = await createViteServer({
+      server: { middlewareMode: true, hmr: false },
+      appType: "spa",
+    });
+    app.use(vite.middlewares);
+  } else {
+    const distPath = path.join(baseDir, "dist");
+    app.use(express.static(distPath));
+    app.get("*", (req, res) => {
+      res.sendFile(path.join(distPath, "index.html"));
+    });
+  }
 
-  // Local server listening logic
-  async function startServer() {
-    // vite instance is now dynamically imported
-    if (process.env.NODE_ENV !== "production" && !process.env.VERCEL && createViteServer) {
-      const vite = await createViteServer({
-        server: { middlewareMode: true, hmr: false },
-        appType: "spa",
+  if (httpServer && !process.env.VERCEL) {
+      httpServer.listen(PORT, "0.0.0.0", async () => {
+          console.log(`Server running at http://localhost:${PORT}`);
       });
-      app.use(vite.middlewares);
-    } else {
-      const distPath = path.join(baseDir, "dist");
-      app.use(express.static(distPath));
-      app.get("*", (req, res) => {
-        res.sendFile(path.join(distPath, "index.html"));
-      });
-    }
-
-    if (httpServer) {
-        httpServer.listen(PORT, "0.0.0.0", async () => {
-            console.log(`Server running at http://localhost:${PORT}`);
-            // Run initializations after server starts
-            await runInitializations();
-        });
-    }
+  }
 }
 
-  // Only run the server if not running in a serverless environment like Vercel
-  if (!process.env.VERCEL) {
-    startServer();
-  } else {
-    // On Vercel, trigger initializations eagerly during the cold start
-    runInitializations().catch(console.error);
-  }
+// Initial call
+startServer();
+
+// Export for Vercel
+export default app;
