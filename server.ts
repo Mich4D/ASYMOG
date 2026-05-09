@@ -57,19 +57,11 @@ async function sendEmail(to: string, subject: string, text: string, html?: strin
 }
 
 
+// Vite server instance caching
+let createViteServer: any;
+
 // Use process.cwd() instead of __dirname to avoid import.meta.url issues on Vercel
 const baseDir = process.cwd();
-
-// Dynamic import for Vite
-let createViteServer: any;
-if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
-  try {
-    const viteModule = await import("vite");
-    createViteServer = viteModule.createServer;
-  } catch (e) {
-    console.warn("Vite not found, static serving only");
-  }
-}
 
 const USERS_FILE = "users";
 const EXECUTIVES_FILE = "executives";
@@ -220,9 +212,15 @@ async function runInitializations() {
 
         // Check Supabase health with timeout
         console.log("Checking Supabase health...");
-        const healthTimeout = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase health check timeout")), 5000));
+        let timeoutId: any;
+        const healthTimeout = new Promise((_, reject) => {
+          timeoutId = setTimeout(() => reject(new Error("Supabase health check timeout")), 5000);
+        });
+        
         await Promise.race([checkSupabaseHealth(), healthTimeout]).catch(err => {
           console.warn("⚠️ Supabase health check failed or timed out:", err.message);
+        }).finally(() => {
+          clearTimeout(timeoutId);
         });
         
         console.log("✅ Platform initializations completed.");
@@ -278,9 +276,20 @@ async function loadData(key: string, _default: any) {
   try {
     // Add a race to prevent hanging indefinitely
     const supabaseRequest = supabase.from('kv_store').select('value').eq('key', key).single();
-    const timeoutPromise = new Promise((_, reject) => setTimeout(() => reject(new Error("Supabase timeout")), 3000));
+    let timeoutId: any;
+    const timeoutPromise = new Promise((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("Supabase timeout")), 3000);
+    });
     
-    const { data, error } = (await Promise.race([supabaseRequest, timeoutPromise])) as any;
+    let dbRes: any = {};
+    try {
+      dbRes = (await Promise.race([supabaseRequest, timeoutPromise])) as any;
+    } catch (e: any) {
+      dbRes = { error: { message: e.message } };
+    } finally {
+      clearTimeout(timeoutId);
+    }
+    const { data, error } = dbRes;
 
     if (error) {
        const isNotFound = error.code === 'PGRST116';
@@ -443,8 +452,8 @@ const PORT = 3000;
 let httpServer: any;
 let io: any;
 
-httpServer = createServer(app);
-io = new Server(httpServer, {
+httpServer = process.env.VERCEL ? null : createServer(app);
+io = process.env.VERCEL ? null : new Server(httpServer, {
   cors: {
     origin: "*",
     methods: ["GET", "POST"]
@@ -457,8 +466,12 @@ let initPromise = runInitializations().catch((e) => {
 
 // Middleware to ensure initializations complete before handling API requests
 app.use(async (req, res, next) => {
+  // Try to wait for init, but don't block for more than 1 second to avoid Vercel timeouts
   if (initPromise && req.path.startsWith('/api/')) {
-    await initPromise;
+    await Promise.race([
+      initPromise,
+      new Promise(resolve => setTimeout(resolve, 1000))
+    ]).catch(() => {});
   }
   next();
 });
@@ -1778,8 +1791,22 @@ app.use((err: any, req: any, res: any, next: any) => {
   });
 });
 
+app.use((err: any, req: any, res: any, next: any) => {
+  console.error("Express App Error:", err);
+  res.status(500).json({ error: "A server error occurred internally.", details: err.message });
+});
+
 // Local server listening logic
 async function startServer() {
+  if (process.env.NODE_ENV !== "production" && !process.env.VERCEL) {
+    try {
+      const viteModule = await import("vite");
+      createViteServer = viteModule.createServer;
+    } catch (e) {
+      console.warn("Vite not found, static serving only");
+    }
+  }
+
   // vite instance is now dynamically imported
   if (process.env.NODE_ENV !== "production" && createViteServer) {
     const vite = await createViteServer({
@@ -1803,7 +1830,9 @@ async function startServer() {
 }
 
 // Initial call
-startServer();
+if (!process.env.VERCEL) {
+  startServer();
+}
 
 // Export for Vercel
 export default app;
