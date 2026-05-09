@@ -648,7 +648,10 @@ if (io) {
       const saved = await saveData(RESOURCES_FILE, resources);
       if (!saved) {
         if (file && fs.existsSync(file.path)) fs.unlinkSync(file.path);
-        return res.status(500).json({ error: "File uploaded but failed to save resource entry to database" });
+        const errMsg = (!isSupabaseConfigured() && process.env.VERCEL) ? 
+           "Storage error: Vercel requires Supabase to save app data! Please verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set correctly in Vercel." : 
+           "File uploaded but failed to save resource entry to database";
+        return res.status(500).json({ error: errMsg });
       }
       
       // Final cleanup of local file if it still exists (after Cloudinary/Supabase success)
@@ -1601,7 +1604,7 @@ if (io) {
         image: ex.image
       }));
 
-      await saveData(EXECUTIVES_FILE, payload);
+      const saveOk = await saveData(EXECUTIVES_FILE, payload);
 
       if (isSupabaseConfigured()) {
         try {
@@ -1610,6 +1613,11 @@ if (io) {
           console.warn("Could not upsert to executives table.");
         }
       }
+      
+      if (!saveOk && !isSupabaseConfigured() && process.env.VERCEL) {
+         return res.status(500).json({ error: "Storage error: Vercel requires Supabase to save app data! Please verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set correctly in Vercel." });
+      }
+      
       res.json({ message: "Executives updated successfully" });
     } catch (e) {
       console.error("Error saving executives:", e);
@@ -1681,7 +1689,7 @@ if (io) {
       const payload = { ...currentSettings, ...settings };
       
       // Save using our robust wrapper (saves to Supabase kv_store)
-      await saveData(SETTINGS_FILE, payload);
+      const saveOk = await saveData(SETTINGS_FILE, payload);
 
       // Re-initialize Cloudinary if URL changed
       if (settings.cloudinaryUrl) {
@@ -1693,6 +1701,10 @@ if (io) {
         try {
           await supabase.from('settings').upsert({ id: 1, ...payload }, { onConflict: 'id' });
         } catch (e) {}
+      }
+      
+      if (!saveOk && !isSupabaseConfigured() && process.env.VERCEL) {
+         return res.status(500).json({ error: "Storage error: Vercel requires Supabase to save app data! Please verify SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are set correctly in Vercel." });
       }
       
       res.json({ message: "Settings updated successfully" });

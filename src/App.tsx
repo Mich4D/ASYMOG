@@ -692,13 +692,13 @@ export default function App() {
           </div>
 
           {/* Desktop Nav */}
-          <div className="hidden lg:flex items-center space-x-6 font-medium">
-            <div className="relative group mr-2">
-               <Search size={18} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
+          <div className="hidden xl:flex items-center space-x-3 text-sm font-medium">
+            <div className="relative group mr-1">
+               <Search size={16} className="absolute left-3 top-1/2 -translate-y-1/2 text-gray-400" />
                <input 
                  type="text" 
                  placeholder="Search Minister..." 
-                 className="pl-9 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full text-sm focus:ring-2 focus:ring-primary-gold/30 outline-none w-48 focus:w-64 transition-all"
+                 className="pl-9 pr-2 py-1.5 bg-gray-50 border border-gray-200 rounded-full text-xs focus:ring-2 focus:ring-primary-gold/30 outline-none w-32 focus:w-48 transition-all"
                  onKeyDown={(e) => {
                    if (e.key === 'Enter') {
                      // Trigger search action
@@ -708,16 +708,16 @@ export default function App() {
                  }}
                />
             </div>
-            <button onClick={goHome} className="hover:text-primary-theme transition-colors px-2 py-1">Home</button>
-            <button onClick={() => setCurrentPage("verification")} className="hover:text-primary-theme transition-colors px-2 py-1">Verification</button>
-            <button onClick={() => setCurrentPage("about")} className="hover:text-primary-theme transition-colors px-2 py-1">About Us</button>
-            <button onClick={() => setCurrentPage("resources")} className="hover:text-primary-theme transition-colors px-2 py-1">Library & Resources</button>
-            <button onClick={() => setCurrentPage("executive-portal")} className="hover:text-primary-theme transition-colors px-2 py-1 flex items-center gap-1">
-              <ShieldCheck size={16} className="text-primary-gold" />
-              <span>Board Portal</span>
+            <button onClick={goHome} className="hover:text-primary-theme transition-colors px-1 py-1">Home</button>
+            <button onClick={() => setCurrentPage("verification")} className="hover:text-primary-theme transition-colors px-1 py-1">Verification</button>
+            <button onClick={() => setCurrentPage("about")} className="hover:text-primary-theme transition-colors px-1 py-1">About</button>
+            <button onClick={() => setCurrentPage("resources")} className="hover:text-primary-theme transition-colors px-1 py-1 whitespace-nowrap">Resources</button>
+            <button onClick={() => setCurrentPage("executive-portal")} className="hover:text-primary-theme transition-colors px-1 py-1 flex items-center gap-1">
+              <ShieldCheck size={14} className="text-primary-gold" />
+              <span>Board</span>
             </button>
-            <button onClick={() => { setPublicSearchQuery(""); setPublicSearchResults([]); setShowSearchModal(true); }} className="hover:text-primary-theme transition-colors px-2 py-1">Find a Minister</button>
-            <button onClick={() => alert("Events coming soon!")} className="hover:text-primary-theme transition-colors px-2 py-1">Events</button>
+            <button onClick={() => { setPublicSearchQuery(""); setPublicSearchResults([]); setShowSearchModal(true); }} className="hover:text-primary-theme transition-colors px-1 py-1 whitespace-nowrap">Find Minister</button>
+            <button onClick={() => alert("Events coming soon!")} className="hover:text-primary-theme transition-colors px-1 py-1">Events</button>
             {user ? (
               <>
                 <button onClick={() => setCurrentPage("dashboard")} className="hover:text-primary-theme transition-colors px-2 py-1">Dashboard</button>
@@ -740,7 +740,7 @@ export default function App() {
           </div>
 
           {/* Mobile Menu Toggle */}
-          <div className="flex items-center space-x-2 lg:hidden">
+          <div className="flex items-center space-x-2 xl:hidden">
             <button 
               className="p-2 text-primary-gold" 
               onClick={() => { setPublicSearchQuery(""); setPublicSearchResults([]); setShowSearchModal(true); }}
@@ -760,7 +760,7 @@ export default function App() {
               initial={{ opacity: 0, height: 0 }}
               animate={{ opacity: 1, height: "auto" }}
               exit={{ opacity: 0, height: 0 }}
-              className="lg:hidden border-t border-primary-gold/10 overflow-hidden bg-white"
+              className="xl:hidden border-t border-primary-gold/10 overflow-hidden bg-white"
             >
               <div className="p-4 flex flex-col space-y-4 font-medium">
                 <button onClick={() => { goHome(); setIsMenuOpen(false); }}>Home</button>
