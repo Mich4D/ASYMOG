@@ -7,7 +7,26 @@ import { createClient } from "@supabase/supabase-js";
 import ChatWidget from "./components/ChatWidget";
 import MeetingRoom from "./components/MeetingRoom";
 import Typewriter from "./components/Typewriter";
-import { useFlutterwave, closePaymentModal } from "flutterwave-react-v3";
+import { useFlutterwave } from "flutterwave-react-v3";
+
+const closePaymentModal = () => {
+    try {
+        const elements = document.getElementsByName('checkout');
+        if (elements) {
+            elements.forEach(item => {
+                const parent = item.parentElement;
+                if (parent && parent.tagName.toLowerCase() === 'div' && parent.style.position === 'fixed') {
+                   // Often flutterwave puts the iframe in a fixed div wrapper
+                   parent.remove();
+                } else {
+                   item.remove();
+                }
+            });
+        }
+        document.body.style.overflow = '';
+    } catch(e) {}
+};
+
 
 const supabaseUrl = (import.meta as any).env.VITE_SUPABASE_URL || "";
 const supabaseKey = (import.meta as any).env.VITE_SUPABASE_ANON_KEY || "";
@@ -392,7 +411,7 @@ export default function App() {
   const [executiveDuesAmount, setExecutiveDuesAmount] = useState<number>(5000);
   const [certificatePrice, setCertificatePrice] = useState<number>(5000);
   const [licensePrice, setLicensePrice] = useState<number>(7500);
-  const [cooperativeHandPrice, setCooperativeHandPrice] = useState<number>(5000);
+  const [cooperativeHandPrice, setCooperativeHandPrice] = useState<number>(20000);
   const [cooperativeGraceDay, setCooperativeGraceDay] = useState<number>(10);
   const [cooperativeFineAmount, setCooperativeFineAmount] = useState<number>(500);
 
@@ -2509,6 +2528,7 @@ function DashboardPage({
   const [paying, setPaying] = useState(false);
   const [payingDues, setPayingDues] = useState(false);
   const [payingCoop, setPayingCoop] = useState(false);
+  const [coopJoinConfirmStage, setCoopJoinConfirmStage] = useState(false);
   const [showCertModal, setShowCertModal] = useState(false);
   const [showLicModal, setShowLicModal] = useState(false);
   const [paymentSuccessSlip, setPaymentSuccessSlip] = useState<{ type: string; reference: string } | null>(null);
@@ -2827,12 +2847,13 @@ function DashboardPage({
   const totalFineAmount = activeFine + (arrearsCount * cooperativeFineAmount); // Fine for each missed month too? Let's keep it simple: one fine for current, plus missed months bases.
   
   const handlePayCooperative = () => {
-    if (!user.cooperativeEnrollment) {
-      if (!confirm(`Are you sure you want to join ASYMOG Cooperative with ${coopHands} hand(s)?`)) return;
-    }
-
     const baseCoopAmount = cooperativeHandPrice * coopHands;
     const totalCoopAmount = baseCoopAmount + totalArrearsAmount + (user.cooperativeEnrollment ? totalFineAmount : 0);
+
+    if (!user.cooperativeEnrollment && !coopJoinConfirmStage) {
+      setCoopJoinConfirmStage(true);
+      return;
+    }
 
     if ((window as any).FlutterwaveCheckout) {
        (window as any).FlutterwaveCheckout({
@@ -2858,6 +2879,8 @@ function DashboardPage({
           },
           onclose: () => {},
        });
+    } else {
+       alert("Flutterwave is still loading. Please try again in a few seconds.");
     }
   };
 
@@ -3469,7 +3492,7 @@ function DashboardPage({
                   className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"
                 >
                   <PlusCircle size={20} />
-                  <span>Join Coop</span>
+                  <span>{coopJoinConfirmStage ? `Pay ₦${(cooperativeHandPrice * coopHands).toLocaleString()}` : "Join Coop"}</span>
                 </button>
               </div>
             ) : (
@@ -6207,6 +6230,11 @@ function AdminDashboardPage({
   const [resourceForm, setResourceForm] = useState({ title: "", description: "", file: null as File | null, url: "" });
   const [uploadingResource, setUploadingResource] = useState(false);
 
+  const [quickDocForm, setQuickDocForm] = useState({ 
+    regNumber: "", docType: "certificate" as "certificate" | "license", 
+    fileData: "", expiryDate: "", isUploading: false, successMsg: "", errorMsg: "" 
+  });
+
   const handleLogin = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoginError("");
@@ -6243,6 +6271,30 @@ function AdminDashboardPage({
       const data = await res.json();
       setResources(data || []);
     } catch {}
+  };
+
+  const handleQuickUpload = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!quickDocForm.regNumber || !quickDocForm.fileData) return;
+    setQuickDocForm({...quickDocForm, isUploading: true, successMsg: "", errorMsg: ""});
+    try {
+      const res = await fetch('/api/admin/quick-upload-doc', {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          regNumber: quickDocForm.regNumber.trim(),
+          docType: quickDocForm.docType,
+          fileData: quickDocForm.fileData,
+          expiryDate: quickDocForm.expiryDate
+        })
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Upload failed");
+      setQuickDocForm({ ...quickDocForm, isUploading: false, successMsg: data.message, fileData: "", regNumber: "", expiryDate: "" });
+      fetchUsers();
+    } catch (err: any) {
+      setQuickDocForm({ ...quickDocForm, isUploading: false, errorMsg: err.message });
+    }
   };
 
   const fetchUsers = async () => {
@@ -6363,13 +6415,13 @@ function AdminDashboardPage({
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
+      const resultData = await res.json();
       if (!res.ok) {
-        const errorData = await res.json();
-        throw new Error(errorData.error || `Failed to update to ${action}`);
+        throw new Error(resultData.error || `Failed to update to ${action}`);
       }
       
       if (isExecPromotion) {
-        alert(`User approved and promoted to ${payload.role}! Access Key: ${payload.accessKey}`);
+        alert(`User approved and promoted to ${payload.role}! Access Key: ${resultData.accessKey || payload.accessKey}`);
       } else {
         alert(`User ${action} successfully!`);
       }
@@ -6624,6 +6676,81 @@ function AdminDashboardPage({
       ) : loading ? (
         <div className="text-center py-20 text-gray-500">Loading directory...</div>
       ) : activeTab === "members" ? (
+        <div className="space-y-8">
+          <div className="bg-white p-6 md:p-8 rounded-[2rem] shadow-sm border border-primary-gold/10">
+            <div className="flex items-start justify-between mb-6">
+              <div>
+                <h3 className="font-serif text-2xl font-bold text-primary-theme flex items-center space-x-2">
+                  <Cloud size={24} className="text-primary-gold" />
+                  <span>Quick Document Upload</span>
+                </h3>
+                <p className="text-sm text-gray-500 mt-1">Directly assign a physical document (Certificate/License) to a member using their Email or Registration Number.</p>
+              </div>
+            </div>
+            <form onSubmit={handleQuickUpload} className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4 items-end">
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Member ID / Email *</label>
+                <input 
+                  type="text" 
+                  required
+                  placeholder="e.g. ASYMOG-G-..."
+                  value={quickDocForm.regNumber}
+                  onChange={e => setQuickDocForm({...quickDocForm, regNumber: e.target.value})}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-primary-gold text-sm font-medium"
+                />
+              </div>
+              <div>
+                <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Document Type</label>
+                <select 
+                  value={quickDocForm.docType}
+                  onChange={e => setQuickDocForm({...quickDocForm, docType: e.target.value as any})}
+                  className="w-full px-4 py-3 bg-gray-50 border border-gray-100 rounded-xl outline-none focus:ring-2 focus:ring-primary-gold text-sm font-bold text-primary-theme"
+                >
+                  <option value="certificate">Certificate</option>
+                  <option value="license">License</option>
+                </select>
+              </div>
+              <div>
+                 <label className="block text-xs font-bold text-gray-500 uppercase tracking-widest mb-2">Upload File Image *</label>
+                 <div className="relative border-2 border-dashed border-gray-200 rounded-xl bg-gray-50 px-4 py-3 text-center cursor-pointer hover:bg-gray-100 transition-colors group">
+                    <input 
+                      type="file" 
+                      accept="image/*,.pdf"
+                      required={!quickDocForm.fileData}
+                      className="absolute inset-0 opacity-0 cursor-pointer w-full h-full"
+                      onChange={async (e) => {
+                        const file = e.target.files?.[0];
+                        if (file) {
+                          setQuickDocForm({...quickDocForm, isUploading: true});
+                          try {
+                            const url = await handleUniversalUpload(file, "App_files");
+                            setQuickDocForm(prev => ({...prev, isUploading: false, fileData: url}));
+                          } catch (err: any) {
+                            alert(err.message);
+                            setQuickDocForm(prev => ({...prev, isUploading: false}));
+                          }
+                        }
+                      }}
+                    />
+                    <span className="text-sm font-bold text-gray-400 group-hover:text-primary-gold">
+                      {quickDocForm.isUploading ? "Uploading..." : quickDocForm.fileData ? "File Ready ✓" : "Browse File"}
+                    </span>
+                 </div>
+              </div>
+              <div>
+                <button 
+                  type="submit"
+                  disabled={quickDocForm.isUploading || !quickDocForm.fileData}
+                  className="w-full py-3 rounded-xl bg-primary-theme text-white font-bold shadow-md hover:bg-black transition-colors disabled:opacity-50"
+                >
+                  {quickDocForm.isUploading ? "Processing..." : "Save Document"}
+                </button>
+              </div>
+            </form>
+            {quickDocForm.successMsg && <p className="mt-4 text-sm font-bold text-green-600 bg-green-50 p-2 rounded-lg">{quickDocForm.successMsg}</p>}
+            {quickDocForm.errorMsg && <p className="mt-4 text-sm font-bold text-red-600 bg-red-50 p-2 rounded-lg">{quickDocForm.errorMsg}</p>}
+          </div>
+
         <div id="ministers-table" className="bg-white rounded-[2rem] shadow-xl border border-primary-gold/10 overflow-hidden scroll-mt-8">
           <div className="p-8 border-b border-gray-100 bg-off-white flex flex-col md:flex-row md:items-center justify-between gap-4">
             <h3 className="font-serif text-2xl font-bold text-primary-theme">Registered Ministers</h3>
@@ -6798,6 +6925,7 @@ function AdminDashboardPage({
               </tbody>
             </table>
           </div>
+        </div>
         </div>
       ) : activeTab === ("executives" as any) ? (
         <div className="bg-white rounded-[2rem] shadow-xl border border-primary-gold/10 overflow-hidden">

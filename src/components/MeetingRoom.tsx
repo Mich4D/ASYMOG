@@ -19,7 +19,7 @@ export default function MeetingRoom({ user, onBack }: { user: User, onBack: () =
       initial={{ opacity: 0 }}
       animate={{ opacity: 1 }}
       exit={{ opacity: 0 }}
-      className="flex-grow flex flex-col bg-gray-900"
+      className="fixed inset-0 z-50 flex flex-col bg-gray-900"
     >
       <div className="bg-gray-800 text-white p-4 flex items-center justify-between shadow-md">
         <div className="flex items-center space-x-4">
@@ -79,7 +79,7 @@ export default function MeetingRoom({ user, onBack }: { user: User, onBack: () =
             iframeRef.style.height = '100%';
             iframeRef.style.width = '100%';
             // Added explicit allow attributes for iframe 
-            iframeRef.allow = "camera; microphone; display-capture; autoplay; clipboard-write";
+            (iframeRef as HTMLIFrameElement).allow = "camera; microphone; display-capture; autoplay; clipboard-write";
           }}
         />
       </div>

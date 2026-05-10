@@ -199,6 +199,9 @@ async function runInitializations() {
                 executiveDuesAmount: 5000,
                 certificatePrice: 5000,
                 licensePrice: 15000,
+                cooperativeHandPrice: 20000,
+                cooperativeGraceDay: 10,
+                cooperativeFineAmount: 500,
                 events: [
                   { id: 1, title: "National Conference", date: "October 2026", loc: "Lagos" },
                   { id: 2, title: "Virtual Prayer", date: "Every Friday", loc: "Online" }
@@ -740,7 +743,56 @@ if (io) {
     "Member of Board": 20
   };
 
-  app.post("/api/admin/executives", async (req, res) => {
+  async function generateExecutiveAccessKey(): Promise<string> {
+  let highestId = 0;
+  try {
+    const currentExecs = await loadData(EXECUTIVES_LIST_FILE, []);
+    const allUsers = await loadData(USERS_FILE, []);
+    
+    const extractId = (key: string) => {
+      if (key && key.includes('/')) {
+        const parts = key.split('/');
+        if (parts.length === 3 && parts[1].startsWith('E') && !isNaN(parseInt(parts[2]))) {
+          return parseInt(parts[2]);
+        }
+      }
+      return 0;
+    };
+
+    currentExecs.forEach((e: any) => {
+      const id = extractId(e.accessKey);
+      if (id > highestId) highestId = id;
+    });
+
+    allUsers.forEach((u: any) => {
+      const id = extractId(u.accessKey);
+      if (id > highestId) highestId = id;
+    });
+    
+    if (isSupabaseConfigured()) {
+      try {
+        const { data: suExecs } = await supabase.from('executives').select('accessKey');
+        const { data: suUsers } = await supabase.from('users').select('accessKey').eq('userType', 'executive');
+        (suExecs || []).forEach(e => {
+          const id = extractId(e.accessKey);
+          if (id > highestId) highestId = id;
+        });
+        (suUsers || []).forEach(u => {
+          const id = extractId(u.accessKey);
+          if (id > highestId) highestId = id;
+        });
+      } catch(e) {}
+    }
+  } catch (e) {
+    console.error("Error generating executive key:", e);
+  }
+
+  const nextId = highestId + 1;
+  const yearStr = new Date().getFullYear().toString().substring(2);
+  return `ASYM/E${yearStr}/${String(nextId).padStart(4, '0')}`;
+}
+
+app.post("/api/admin/executives", async (req, res) => {
     try {
       const { name, role, email, phone, accessKey, image } = req.body;
       const execs = await loadData(EXECUTIVES_LIST_FILE, []);
@@ -754,9 +806,7 @@ if (io) {
 
       let finalAccessKey = accessKey;
       if (!finalAccessKey || (finalAccessKey.startsWith("ASYM/") && finalAccessKey.length === 11)) {
-        const nextId = execs.length + 1;
-        const yearStr = new Date().getFullYear().toString().substring(2);
-        finalAccessKey = `ASYM/E${yearStr}/${String(nextId).padStart(4, '0')}`;
+        finalAccessKey = await generateExecutiveAccessKey();
       }
 
       const newExec = { id: Date.now(), name, role, email, phone, image, accessKey: finalAccessKey, createdAt: new Date().toISOString() };
@@ -1021,12 +1071,12 @@ if (io) {
   app.post("/api/executive-login", async (req, res) => {
     let { accessKey } = req.body;
     if (!accessKey) return res.status(400).json({ error: "Access Key required" });
-    accessKey = accessKey.trim();
+    accessKey = accessKey.trim().toUpperCase();
 
     try {
       // 1. Check special executives list
       const execs = await loadData(EXECUTIVES_LIST_FILE, []);
-      const exec = execs.find((e: any) => e.accessKey === accessKey);
+      const exec = execs.find((e: any) => e.accessKey?.toUpperCase() === accessKey);
       
       if (exec) {
         return res.json({ 
@@ -1045,7 +1095,7 @@ if (io) {
 
       // 2. Check main users list
       const users = await loadData(USERS_FILE, []);
-      const user = users.find((u: any) => u.accessKey === accessKey && u.userType?.toLowerCase() === 'executive');
+      const user = users.find((u: any) => u.accessKey?.toUpperCase() === accessKey && u.userType?.toLowerCase() === 'executive');
 
       if (user) {
         return res.json({ 
@@ -1061,6 +1111,43 @@ if (io) {
             accessKey: user.accessKey
           } 
         });
+      }
+
+      if (isSupabaseConfigured()) {
+        try {
+          const { data: suBaseUser, error: suErr } = await supabase.from('users').select('*').ilike('accessKey', accessKey).eq('userType', 'executive').limit(1).maybeSingle();
+          if (!suErr && suBaseUser) {
+            return res.json({ 
+              user: { 
+                id: suBaseUser.id,
+                fullName: suBaseUser.fullName, 
+                email: suBaseUser.email, 
+                churchName: suBaseUser.churchName,
+                role: suBaseUser.role,
+                status: suBaseUser.status || "approved",
+                userType: "executive",
+                registrationNumber: suBaseUser.registrationNumber,
+                accessKey: suBaseUser.accessKey
+              } 
+            });
+          }
+
+          const { data: suExec, error: suExecErr } = await supabase.from('executives').select('*').ilike('accessKey', accessKey).limit(1).maybeSingle();
+          if (!suExecErr && suExec) {
+            return res.json({ 
+              user: { 
+                id: `exec_${suExec.id}`,
+                fullName: suExec.name, 
+                email: suExec.email, 
+                churchName: "ASYMOG Board",
+                role: suExec.role,
+                status: "approved",
+                userType: "executive",
+                accessKey: suExec.accessKey
+              } 
+            });
+          }
+        } catch (e) {}
       }
 
       res.status(401).json({ error: "Invalid Access Key or account not authorized for Board Portal" });
@@ -1123,6 +1210,60 @@ if (io) {
     }
   });
 
+  app.post("/api/admin/quick-upload-doc", async (req, res) => {
+    const { regNumber, docType, fileData, expiryDate } = req.body;
+    if (!regNumber || !fileData) return res.status(400).json({ error: "Missing required fields." });
+
+    let success = false;
+    let foundEmail = "";
+
+    try {
+      const users = await loadData(USERS_FILE, []);
+      const userIndex = users.findIndex((u: any) => u.registrationNumber === regNumber || u.email === regNumber);
+      if (userIndex !== -1) {
+        if (docType === "certificate") {
+          users[userIndex].certificateData = fileData;
+          if (expiryDate) users[userIndex].certificateExpiry = expiryDate;
+        } else if (docType === "license") {
+          users[userIndex].licenseData = fileData;
+          if (expiryDate) users[userIndex].licenseExpiry = expiryDate;
+        }
+        await saveData(USERS_FILE, users);
+        success = true;
+        foundEmail = users[userIndex].email;
+      }
+    } catch (e) {
+      console.error(e);
+    }
+
+    if (isSupabaseConfigured()) {
+      try {
+        const { data: user } = await supabase.from('users').select('*').or(`registrationNumber.eq.${regNumber},email.eq.${regNumber}`).limit(1).maybeSingle();
+        if (user) {
+          const updates: any = {};
+          if (docType === "certificate") {
+            updates.certificateData = fileData;
+            if (expiryDate) updates.certificateExpiry = expiryDate;
+          } else if (docType === "license") {
+            updates.licenseData = fileData;
+            if (expiryDate) updates.licenseExpiry = expiryDate;
+          }
+          await supabase.from('users').update(updates).eq('id', user.id);
+          success = true;
+          foundEmail = user.email;
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    if (success) {
+      res.json({ success: true, message: `Document uploaded successfully to ${foundEmail}` });
+    } else {
+      res.status(404).json({ error: "User with that Registration Number or Email not found." });
+    }
+  });
+
   app.post("/api/admin/update-user", async (req, res) => {
     const { email, status, certificateData, licenseData, certificateExpiry, licenseExpiry, certForm, licForm, userType, role, accessKey } = req.body;
     let success = false;
@@ -1157,7 +1298,13 @@ if (io) {
     if (req.body.licensePayment !== undefined) updates.licensePayment = req.body.licensePayment;
     if (userType !== undefined) updates.userType = userType;
     if (role !== undefined) updates.role = role;
-    if (accessKey !== undefined) updates.accessKey = accessKey;
+    if (accessKey !== undefined) {
+      if (accessKey.startsWith("ASYM/") && accessKey.length === 11) {
+         updates.accessKey = await generateExecutiveAccessKey();
+      } else {
+         updates.accessKey = accessKey;
+      }
+    }
 
     if (isSupabaseConfigured()) {
       try {
@@ -1182,7 +1329,7 @@ if (io) {
         if (req.body.licensePayment !== undefined) users[userIndex].licensePayment = req.body.licensePayment;
         if (userType !== undefined) users[userIndex].userType = userType;
         if (role !== undefined) users[userIndex].role = role;
-        if (accessKey !== undefined) users[userIndex].accessKey = accessKey;
+        if (updates.accessKey !== undefined) users[userIndex].accessKey = updates.accessKey;
         await saveData(USERS_FILE, users);
         success = true;
 
@@ -1237,7 +1384,7 @@ if (io) {
         const licPaymentText = `Your payment for International Ministerial License was successful. \n\nTracking Number: ${licPaymentRef}\nScheduled Download Date: ${licPaymentDStr}\n\nPlease visit your dashboard on or after this date to download your digital license.`;
         addSystemMessage(email, licPaymentSub, licPaymentText);
       }
-      res.json({ success: true });
+      res.json({ success: true, accessKey: updates.accessKey });
     } else {
       res.status(404).json({ error: "User not found or could not be updated" });
     }
@@ -1540,8 +1687,21 @@ if (io) {
         users[userIndex].cooperativePayments.push(newPayment);
         // Ensure hands is saved if updated
         if (hands) users[userIndex].cooperativeHands = hands;
+        users[userIndex].cooperativeEnrollment = true;
         await saveData(USERS_FILE, users);
         success = true;
+      } else {
+        // Check executives
+        const executives = await loadData(EXECUTIVES_FILE, []);
+        const execIndex = executives.findIndex((u: any) => u.email === email);
+        if (execIndex !== -1) {
+          if (!executives[execIndex].cooperativePayments) executives[execIndex].cooperativePayments = [];
+          executives[execIndex].cooperativePayments.push(newPayment);
+          if (hands) executives[execIndex].cooperativeHands = hands;
+          executives[execIndex].cooperativeEnrollment = true;
+          await saveData(EXECUTIVES_FILE, executives);
+          success = true;
+        }
       }
     } catch (err) {}
 
@@ -1552,9 +1712,23 @@ if (io) {
         payments.push(newPayment);
         await supabase.from('users').update({ 
           cooperativePayments: payments,
-          cooperativeHands: hands || user.cooperativeHands
+          cooperativeHands: hands || user.cooperativeHands,
+          cooperativeEnrollment: true
         }).eq('email', email);
         success = true;
+      } else {
+        // Try executives
+        const { data: exec } = await supabase.from('executives').select('cooperativePayments, cooperativeHands').eq('email', email).maybeSingle();
+        if (exec) {
+          const payments = exec.cooperativePayments || [];
+          payments.push(newPayment);
+          await supabase.from('executives').update({ 
+            cooperativePayments: payments,
+            cooperativeHands: hands || exec.cooperativeHands,
+            cooperativeEnrollment: true
+          }).eq('email', email);
+          success = true;
+        }
       }
     } catch (e) {}
 
