@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useMemo } from "react";
 import { motion, AnimatePresence } from "motion/react";
-import { BookOpen, LucideQuote, Download, LogOut, User, Users, PlusCircle, Church, Phone, Mail, Lock, Award, ShieldCheck, Menu, X, Video, ArrowRight, Eye, EyeOff, Loader2, Check, Search, ChevronDown, CreditCard, History, Facebook, MessageCircle, Reply, Calendar, Globe, TrendingUp, Heart, Briefcase, Zap, Camera, Clock, Plus, DollarSign, PieChart as PieChartIcon, BarChart as BarChartIcon, BarChart2, FileText, Cloud, Trash2 } from "lucide-react";
+import { BookOpen, LucideQuote, Download, LogOut, User, Users, PlusCircle, Church, Phone, Mail, Lock, Award, ShieldCheck, Menu, X, Video, ArrowRight, Eye, EyeOff, Loader2, Check, Search, ChevronDown, CreditCard, History, Facebook, MessageCircle, Reply, Calendar, Globe, TrendingUp, Heart, Briefcase, Zap, Camera, Clock, Plus, DollarSign, PieChart as PieChartIcon, BarChart as BarChartIcon, BarChart2, FileText, Cloud, Trash2, Send } from "lucide-react";
 import { BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip, Legend, ResponsiveContainer, PieChart, Pie, Cell } from 'recharts';
 import { jsPDF } from "jspdf";
 import { createClient } from "@supabase/supabase-js";
@@ -137,6 +137,142 @@ const defaultRegularMeetings = [
   { id: 2, title: "Executive Meeting", schedule: "Last Tuesday of every month", venue: "Google Meet (Direct Link in Executive Portal)", meta: "Time: 7:00 PM" },
   { id: 3, title: "Annual Ministers Conference", schedule: "Every 3rd week of November", venue: "Combined: Physical (Aboru, Lagos) & Google Meet", meta: "A 3-day strategic annual gathering." }
 ];
+
+function CoopRoom({ user }: { user: User }) {
+  const [messages, setMessages] = useState<any[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [message, setMessage] = useState("");
+  const [sending, setSending] = useState(false);
+
+  const fetchMessages = async () => {
+    try {
+      const res = await fetch("/api/cooperative/messages");
+      if (res.ok) {
+        const data = await res.json();
+        setMessages(data);
+      }
+    } catch (e) {
+      console.error(e);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMessages();
+    const interval = setInterval(fetchMessages, 10000); // refresh every 10s
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleSend = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!message.trim()) return;
+    setSending(true);
+    try {
+      const res = await fetch("/api/cooperative/messages", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userEmail: user.email, userName: user.fullName, message })
+      });
+      if (res.ok) {
+        setMessage("");
+        fetchMessages();
+      }
+    } catch(err) {
+      alert("Failed to send message");
+    } finally {
+      setSending(false);
+    }
+  };
+
+  return (
+    <div className="flex flex-col gap-8 animate-fade-in text-left">
+      <div className="bg-gradient-to-r from-indigo-900 to-indigo-700 rounded-3xl p-8 text-white shadow-xl relative overflow-hidden">
+        <div className="absolute top-0 right-0 w-64 h-64 bg-indigo-500 rounded-full mix-blend-screen opacity-20 blur-3xl pointer-events-none"></div>
+        <div className="relative z-10 flex items-center gap-4 mb-4">
+          <Users size={32} className="text-indigo-300" />
+          <h2 className="text-3xl font-bold">Cooperative Room</h2>
+        </div>
+        <p className="text-indigo-100 text-lg mb-6 max-w-3xl">
+          Welcome to the ASYMOG Cooperative Space. This is a private area exclusively for members who have joined the monthly contribution scheme.
+        </p>
+        <div className="bg-white/10 rounded-2xl p-6 backdrop-blur-sm border border-white/20 grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div>
+            <h4 className="text-indigo-300 font-semibold mb-2 flex items-center gap-2"><DollarSign size={16}/> Purpose</h4>
+            <p className="text-sm text-indigo-50 leading-relaxed">To pool financial resources together to empower ministers, support ministries, and achieve greater financial stability.</p>
+          </div>
+          <div>
+            <h4 className="text-indigo-300 font-semibold mb-2 flex items-center gap-2"><Clock size={16}/> Terms</h4>
+            <p className="text-sm text-indigo-50 leading-relaxed">Contributions are made monthly. Funds are disbursed on a rotational basis or as agreed by the cooperative committee.</p>
+          </div>
+          <div>
+            <h4 className="text-indigo-300 font-semibold mb-2 flex items-center gap-2"><Check size={16}/> Your Status</h4>
+            <div className="flex items-center gap-2 text-sm text-indigo-50">
+              <span className="w-2 h-2 rounded-full bg-green-400"></span> Active Participant ({user.cooperativeHands} units)
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <div className="bg-white rounded-3xl shadow-lg border border-gray-100 p-6 md:p-8 flex flex-col h-[600px]">
+        <h3 className="text-xl font-bold text-gray-800 mb-6 flex items-center gap-2">
+          <MessageCircle className="text-indigo-600" />
+          Cooperative Discussion Board
+        </h3>
+
+        <div className="flex-1 overflow-y-auto mb-6 pr-2 space-y-4">
+          {loading ? (
+            <div className="flex justify-center py-12"><Loader2 size={32} className="animate-spin text-indigo-200" /></div>
+          ) : messages.length === 0 ? (
+            <div className="text-center py-12 text-gray-400">
+              <MessageCircle size={48} className="mx-auto mb-4 opacity-20" />
+              <p>No messages yet. Be the first to start the discussion!</p>
+            </div>
+          ) : (
+            messages.map((msg, idx) => (
+              <div key={idx} className={`flex flex-col ${msg.userEmail === user.email ? 'items-end' : 'items-start'}`}>
+                <div className={`max-w-[80%] rounded-2xl p-4 ${msg.userEmail === user.email ? 'bg-indigo-600 text-white rounded-br-none' : 'bg-gray-100 text-gray-800 rounded-bl-none'}`}>
+                  {msg.userEmail !== user.email && <p className="text-xs font-bold mb-1 opacity-70">{msg.userName}</p>}
+                  <p className="whitespace-pre-wrap">{msg.message}</p>
+                </div>
+                <div className={`flex items-center gap-2 mt-1 ${msg.userEmail === user.email ? 'justify-end' : 'justify-start'}`}>
+                  <span className="text-xs text-gray-400">{new Date(msg.createdAt).toLocaleString()}</span>
+                  <a 
+                    href={`https://wa.me/?text=${encodeURIComponent(`*${msg.userName} (ASYMOG Coop Room):*\n${msg.message}`)}`}
+                    target="_blank" 
+                    rel="noopener noreferrer" 
+                    className="text-xs text-green-500 hover:text-green-600 font-medium flex items-center gap-1 bg-green-50 px-2 py-0.5 rounded"
+                  >
+                    <svg width="10" height="10" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round"><path d="M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z"></path></svg>
+                    Forward
+                  </a>
+                </div>
+              </div>
+            ))
+          )}
+        </div>
+
+        <form onSubmit={handleSend} className="bg-gray-50 p-2 rounded-2xl flex items-center gap-2 border border-gray-200">
+          <input
+            type="text"
+            className="flex-1 bg-transparent border-none focus:ring-0 px-4 py-2"
+            placeholder="Type your message to the cooperative..."
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
+            disabled={sending}
+          />
+          <button 
+            type="submit" 
+            disabled={sending || !message.trim()}
+            className="bg-indigo-600 text-white p-3 rounded-xl hover:bg-indigo-700 transition-colors disabled:opacity-50"
+          >
+            {sending ? <Loader2 size={20} className="animate-spin" /> : <Send size={20} />}
+          </button>
+        </form>
+      </div>
+    </div>
+  );
+}
 
 function SupportSection({ user }: { user: User }) {
   const [messages, setMessages] = useState<any[]>([]);
@@ -2536,7 +2672,7 @@ function DashboardPage({
   const [paymentSuccessSlip, setPaymentSuccessSlip] = useState<{ type: string; reference: string } | null>(null);
   const [resources, setResources] = useState<any[]>([]);
   const [coopHands, setCoopHands] = useState(user.cooperativeHands || 1);
-  const [activeDashTab, setActiveDashTab] = useState<"dashboard" | "support" | "executive_portal">("dashboard");
+  const [activeDashTab, setActiveDashTab] = useState<"dashboard" | "support" | "executive_portal" | "coop_room">("dashboard");
   const [uploadingProfilePic, setUploadingProfilePic] = useState(false);
 
   const handleProfilePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -3040,12 +3176,22 @@ function DashboardPage({
         >
           Message Admin
         </button>
+        {user.cooperativeEnrollment && (
+          <button 
+            onClick={() => setActiveDashTab("coop_room")}
+            className={`px-8 py-4 rounded-2xl font-bold transition-all ${activeDashTab === "coop_room" ? "bg-indigo-600 text-white shadow-xl" : "text-gray-500 hover:bg-gray-50"}`}
+          >
+            Cooperative Room
+          </button>
+        )}
       </div>
 
       {activeDashTab === "support" ? (
         <SupportSection user={user} />
       ) : activeDashTab === "executive_portal" ? (
         <ExecutivePortal user={user} onUpdateUser={onUpdateUser} />
+      ) : activeDashTab === "coop_room" ? (
+        <CoopRoom user={user} />
       ) : (
         <>
           <AnimatePresence>

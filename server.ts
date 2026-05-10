@@ -72,6 +72,7 @@ const EXECUTIVE_PAYMENTS_FILE = "executive_payments";
 const RESOURCES_FILE = "resources";
 const COOPERATIVE_PAYMENTS_FILE = "cooperative_payments";
 const MESSAGES_FILE = "messages";
+const COOP_MESSAGES_FILE = "coop_messages";
 
 const uploadsDir = process.env.VERCEL ? "/tmp/uploads" : path.join(baseDir, "uploads");
 if (!fs.existsSync(uploadsDir)) {
@@ -863,6 +864,9 @@ app.post("/api/admin/executives", async (req, res) => {
             status: 'approved',
             registrationNumber: exec.accessKey,
             phone: exec.phone || exec.email,
+            cooperativeEnrollment: exec.cooperativeEnrollment,
+            cooperativeHands: exec.cooperativeHands,
+            cooperativePayments: exec.cooperativePayments || [],
             duesPayments: myPayments
           } 
         });
@@ -1088,6 +1092,9 @@ app.post("/api/admin/executives", async (req, res) => {
             role: exec.role,
             status: "approved",
             userType: "executive",
+            cooperativeEnrollment: exec.cooperativeEnrollment,
+            cooperativeHands: exec.cooperativeHands,
+            cooperativePayments: exec.cooperativePayments || [],
             accessKey: exec.accessKey
           } 
         });
@@ -1108,6 +1115,9 @@ app.post("/api/admin/executives", async (req, res) => {
             status: user.status || "approved",
             userType: "executive",
             registrationNumber: user.registrationNumber,
+            cooperativeEnrollment: user.cooperativeEnrollment,
+            cooperativeHands: user.cooperativeHands,
+            cooperativePayments: user.cooperativePayments || [],
             accessKey: user.accessKey
           } 
         });
@@ -1127,6 +1137,9 @@ app.post("/api/admin/executives", async (req, res) => {
                 status: suBaseUser.status || "approved",
                 userType: "executive",
                 registrationNumber: suBaseUser.registrationNumber,
+                cooperativeEnrollment: suBaseUser.cooperativeEnrollment,
+                cooperativeHands: suBaseUser.cooperativeHands,
+                cooperativePayments: suBaseUser.cooperativePayments || [],
                 accessKey: suBaseUser.accessKey
               } 
             });
@@ -1143,6 +1156,9 @@ app.post("/api/admin/executives", async (req, res) => {
                 role: suExec.role,
                 status: "approved",
                 userType: "executive",
+                cooperativeEnrollment: suExec.cooperativeEnrollment,
+                cooperativeHands: suExec.cooperativeHands,
+                cooperativePayments: suExec.cooperativePayments || [],
                 accessKey: suExec.accessKey
               } 
             });
@@ -1178,6 +1194,12 @@ app.post("/api/admin/executives", async (req, res) => {
             registrationNumber: sbUser.registrationNumber,
             certificateData: sbUser.certificateData,
             licenseData: sbUser.licenseData,
+            cooperativeEnrollment: sbUser.cooperativeEnrollment,
+            cooperativeHands: sbUser.cooperativeHands,
+            cooperativePayments: sbUser.cooperativePayments || [],
+            userType: sbUser.userType || "member",
+            role: sbUser.role,
+            accessKey: sbUser.accessKey,
             duesPayments: sbUser.duesPayments || []
           } 
         });
@@ -1198,6 +1220,12 @@ app.post("/api/admin/executives", async (req, res) => {
             registrationNumber: user.registrationNumber,
             certificateData: user.certificateData,
             licenseData: user.licenseData,
+            cooperativeEnrollment: user.cooperativeEnrollment,
+            cooperativeHands: user.cooperativeHands,
+            cooperativePayments: user.cooperativePayments || [],
+            userType: user.userType || "member",
+            role: user.role,
+            accessKey: user.accessKey,
             duesPayments: user.duesPayments || []
           } 
         });
@@ -1313,7 +1341,18 @@ app.post("/api/admin/executives", async (req, res) => {
       try {
         const { error } = await supabase.from('users').update(updates).eq('email', email);
         if (!error) success = true;
-      } catch (e) {}
+      } catch (e) {
+        console.error("Supabase user update error:", e);
+      }
+      
+      try {
+        const execUpdates = { ...updates };
+        if (updates.profilePicture !== undefined) execUpdates.image = updates.profilePicture;
+        const { error: execErr } = await supabase.from('executives').update(execUpdates).eq('email', email);
+        if (!execErr) success = true;
+      } catch (e) {
+        console.error("Supabase executive update error:", e);
+      }
     }
 
     try {
@@ -1367,6 +1406,24 @@ app.post("/api/admin/executives", async (req, res) => {
           
           sendEmail(email, subject, emailBody).catch(e => console.error("Email send error:", e));
         }
+      }
+    } catch (err) {}
+
+    try {
+      const execs = await loadData(EXECUTIVES_LIST_FILE, []);
+      const execIndex = execs.findIndex((u: any) => u.email === email);
+      if (execIndex !== -1) {
+        if (status) execs[execIndex].status = status;
+        if (role !== undefined) execs[execIndex].role = role;
+        if (profilePicture !== undefined) {
+           execs[execIndex].profilePicture = profilePicture;
+           execs[execIndex].image = profilePicture; // handle legacy key
+        }
+        if (cooperativeHands !== undefined) execs[execIndex].cooperativeHands = cooperativeHands;
+        if (cooperativeEnrollment !== undefined) execs[execIndex].cooperativeEnrollment = cooperativeEnrollment;
+        if (updates.accessKey !== undefined) execs[execIndex].accessKey = updates.accessKey;
+        await saveData(EXECUTIVES_LIST_FILE, execs);
+        success = true;
       }
     } catch (err) {}
 
@@ -1494,6 +1551,57 @@ app.post("/api/admin/executives", async (req, res) => {
       res.json({ success: true, payment: newPayment });
     } else {
       res.status(404).json({ error: "User not found" });
+    }
+  });
+
+  // Cooperative Messaging Routes
+  app.get("/api/cooperative/messages", async (req, res) => {
+    try {
+      if (isSupabaseConfigured()) {
+        try {
+          const { data, error } = await supabase.from('coop_messages').select('*').order('createdAt', { ascending: true });
+          if (!error && data) return res.json(data);
+        } catch (err) {}
+      }
+      const messages = await loadData(COOP_MESSAGES_FILE, []);
+      res.json(messages);
+    } catch (e) {
+      res.status(500).json({ error: "Failed to load coop messages" });
+    }
+  });
+
+  app.post("/api/cooperative/messages", async (req, res) => {
+    try {
+      const { userEmail, userName, message } = req.body;
+      if (!userEmail || !message) {
+        return res.status(400).json({ error: "Missing required fields" });
+      }
+
+      const newMessage = {
+        id: Date.now(),
+        userEmail,
+        userName: userName || userEmail,
+        message,
+        createdAt: new Date().toISOString()
+      };
+
+      let saved = false;
+      if (isSupabaseConfigured()) {
+        try {
+          const { error } = await supabase.from('coop_messages').insert(newMessage);
+          if (!error) saved = true;
+        } catch (err) {}
+      }
+
+      if (!saved) {
+        const messages = await loadData(COOP_MESSAGES_FILE, []);
+        messages.push(newMessage);
+        await saveData(COOP_MESSAGES_FILE, messages);
+      }
+
+      res.json({ success: true, message: newMessage });
+    } catch (e) {
+      res.status(500).json({ error: "Failed to send coop message" });
     }
   });
 
