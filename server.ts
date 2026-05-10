@@ -1265,7 +1265,7 @@ app.post("/api/admin/executives", async (req, res) => {
   });
 
   app.post("/api/admin/update-user", async (req, res) => {
-    const { email, status, certificateData, licenseData, certificateExpiry, licenseExpiry, certForm, licForm, userType, role, accessKey } = req.body;
+    const { email, status, certificateData, licenseData, certificateExpiry, licenseExpiry, certForm, licForm, userType, role, accessKey, cooperativeHands, cooperativeEnrollment, profilePicture } = req.body;
     let success = false;
 
     if (userType === 'executive' && role) {
@@ -1298,6 +1298,9 @@ app.post("/api/admin/executives", async (req, res) => {
     if (req.body.licensePayment !== undefined) updates.licensePayment = req.body.licensePayment;
     if (userType !== undefined) updates.userType = userType;
     if (role !== undefined) updates.role = role;
+    if (cooperativeHands !== undefined) updates.cooperativeHands = cooperativeHands;
+    if (cooperativeEnrollment !== undefined) updates.cooperativeEnrollment = cooperativeEnrollment;
+    if (profilePicture !== undefined) updates.profilePicture = profilePicture;
     if (accessKey !== undefined) {
       if (accessKey.startsWith("ASYM/") && accessKey.length === 11) {
          updates.accessKey = await generateExecutiveAccessKey();
@@ -1329,6 +1332,9 @@ app.post("/api/admin/executives", async (req, res) => {
         if (req.body.licensePayment !== undefined) users[userIndex].licensePayment = req.body.licensePayment;
         if (userType !== undefined) users[userIndex].userType = userType;
         if (role !== undefined) users[userIndex].role = role;
+        if (cooperativeHands !== undefined) users[userIndex].cooperativeHands = cooperativeHands;
+        if (cooperativeEnrollment !== undefined) users[userIndex].cooperativeEnrollment = cooperativeEnrollment;
+        if (profilePicture !== undefined) users[userIndex].profilePicture = profilePicture;
         if (updates.accessKey !== undefined) users[userIndex].accessKey = updates.accessKey;
         await saveData(USERS_FILE, users);
         success = true;

@@ -46,6 +46,7 @@ export type User = {
   email: string;
   churchName: string;
   phone?: string;
+  profilePicture?: string;
   role?: string;
   status?: string;
   userType?: 'member' | 'executive' | 'admin';
@@ -2529,12 +2530,40 @@ function DashboardPage({
   const [payingDues, setPayingDues] = useState(false);
   const [payingCoop, setPayingCoop] = useState(false);
   const [coopJoinConfirmStage, setCoopJoinConfirmStage] = useState(false);
+  const [acceptedCoopTerms, setAcceptedCoopTerms] = useState(false);
   const [showCertModal, setShowCertModal] = useState(false);
   const [showLicModal, setShowLicModal] = useState(false);
   const [paymentSuccessSlip, setPaymentSuccessSlip] = useState<{ type: string; reference: string } | null>(null);
   const [resources, setResources] = useState<any[]>([]);
   const [coopHands, setCoopHands] = useState(user.cooperativeHands || 1);
   const [activeDashTab, setActiveDashTab] = useState<"dashboard" | "support" | "executive_portal">("dashboard");
+  const [uploadingProfilePic, setUploadingProfilePic] = useState(false);
+
+  const handleProfilePictureUpload = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    setUploadingProfilePic(true);
+    try {
+      const url = await handleUniversalUpload(file, 'profile_pictures');
+      // Optimistic update
+      const updatedUser = { ...user, profilePicture: url };
+      onUpdateUser(updatedUser);
+      
+      const res = await fetch("/api/admin/update-user", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ email: user.email, profilePicture: url })
+      });
+      if (!res.ok) {
+        alert("Failed to save profile picture to server, but updated locally");
+      }
+    } catch (err: any) {
+      alert("Upload failed: " + err.message);
+    } finally {
+      setUploadingProfilePic(false);
+    }
+  };
 
   useEffect(() => {
     if (user.userType === "executive") {
@@ -3113,15 +3142,36 @@ function DashboardPage({
         <div className="absolute -bottom-32 -left-32 w-64 h-64 bg-primary-gold rounded-full mix-blend-screen opacity-10 blur-3xl pointer-events-none"></div>
         
         <div className="relative z-10 w-full md:w-auto flex flex-col sm:flex-row items-start sm:items-center gap-6">
-           {((user.certForm && user.certForm.profilePicture) || (user as any).image) ? (
-              <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden border-2 border-primary-gold/50 shadow-[0_0_30px_rgba(212,175,55,0.2)] shrink-0 bg-primary-theme/50">
-                 <img src={optimizeImage((user.certForm && user.certForm.profilePicture) || (user as any).image, 400)} alt={user.fullName} className="w-full h-full object-cover" />
-              </div>
-           ) : (
-              <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] border-2 border-white/10 shrink-0 bg-white/5 flex items-center justify-center shadow-lg">
-                 <User size={48} className="text-primary-gold/50" />
-              </div>
-           )}
+           <div className="relative group cursor-pointer" onClick={() => document.getElementById('profilePicUpload')?.click()}>
+             {user.profilePicture || (user.certForm && user.certForm.profilePicture) || (user as any).image ? (
+                <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] overflow-hidden border-2 border-primary-gold/50 shadow-[0_0_30px_rgba(212,175,55,0.2)] shrink-0 bg-primary-theme/50 relative">
+                   <img src={optimizeImage(user.profilePicture || (user.certForm && user.certForm.profilePicture) || (user as any).image, 400)} alt={user.fullName} className={`w-full h-full object-cover transition-opacity ${uploadingProfilePic ? 'opacity-50' : 'group-hover:opacity-75'}`} />
+                   {uploadingProfilePic && (
+                     <div className="absolute inset-0 flex items-center justify-center">
+                       <Loader2 size={32} className="animate-spin text-white" />
+                     </div>
+                   )}
+                   {!uploadingProfilePic && (
+                     <div className="absolute inset-0 bg-black/50 opacity-0 group-hover:opacity-100 transition-opacity flex items-center justify-center pointer-events-none">
+                       <Camera size={24} className="text-white" />
+                     </div>
+                   )}
+                </div>
+             ) : (
+                <div className="w-24 h-24 sm:w-32 sm:h-32 rounded-[2rem] border-2 border-dashed border-white/30 shrink-0 bg-white/5 flex items-center justify-center shadow-lg relative transition-colors hover:border-primary-gold/50">
+                   {uploadingProfilePic ? (
+                     <Loader2 size={32} className="animate-spin text-primary-gold" />
+                   ) : (
+                     <div className="flex flex-col items-center gap-2">
+                       <User size={32} className="text-primary-gold/50 group-hover:hidden" />
+                       <Camera size={32} className="text-primary-gold hidden group-hover:block" />
+                       <span className="text-[10px] text-white/50 group-hover:text-primary-gold uppercase tracking-widest font-bold">Upload</span>
+                     </div>
+                   )}
+                </div>
+             )}
+             <input type="file" id="profilePicUpload" className="hidden" accept="image/*" onChange={(e) => { e.stopPropagation(); handleProfilePictureUpload(e); }} />
+           </div>
            <div className="flex-1">
              <div className="flex items-center space-x-2 mb-4">
                <ShieldCheck size={20} className="text-primary-gold" />
@@ -3155,9 +3205,17 @@ function DashboardPage({
               <span>Pending Approval</span>
             </div>
           ) : (
-            <div className="inline-flex items-center space-x-2 bg-green-500/20 text-green-300 px-5 py-2.5 rounded-full font-bold text-sm mb-4">
-              <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]"></div>
-              <span>Active Member</span>
+            <div className="flex flex-col gap-2 mb-4">
+              <div className="inline-flex items-center justify-center space-x-2 bg-green-500/20 text-green-300 px-5 py-2.5 rounded-full font-bold text-sm">
+                <div className="w-2.5 h-2.5 bg-green-400 rounded-full animate-pulse shadow-[0_0_8px_rgba(74,222,128,0.8)]"></div>
+                <span>Active Member</span>
+              </div>
+              {user.cooperativeEnrollment && (
+                <div className="inline-flex items-center justify-center space-x-2 bg-indigo-500/20 text-indigo-300 px-5 py-2.5 rounded-full font-bold text-sm">
+                  <Users size={14} />
+                  <span>Coop Member ({user.cooperativeHands} units)</span>
+                </div>
+              )}
             </div>
           )}
           <div className="pt-4 border-t border-white/10">
@@ -3475,25 +3533,48 @@ function DashboardPage({
           </div>
           <div className="flex flex-col sm:flex-row items-center gap-4">
             {!user.cooperativeEnrollment ? (
-              <div className="bg-gray-50 p-4 rounded-xl border border-gray-100 flex items-center gap-4">
-                <div>
-                   <label className="block text-[10px] font-bold text-gray-400 uppercase">Number of Hands</label>
-                   <input 
-                      type="number" 
-                      min="1" 
-                      value={coopHands} 
-                      onChange={(e) => setCoopHands(Number(e.target.value))}
-                      className="bg-transparent border-none font-bold text-lg w-16 outline-none"
-                   />
+              <div className="bg-gray-50 p-6 rounded-2xl border border-gray-100 flex flex-col gap-4 w-full">
+                <div className="flex flex-col sm:flex-row items-center justify-between gap-4">
+                  <div>
+                    <h4 className="font-bold text-gray-800 text-lg">Enroll in Cooperative</h4>
+                    <p className="text-gray-500 text-sm">Choose your hands and join the saving cooperative.</p>
+                  </div>
+                  <div className="flex items-center gap-3 bg-white p-2 rounded-xl border border-gray-200 shadow-sm">
+                     <label className="block text-xs font-bold text-gray-400 uppercase">Hands</label>
+                     <input 
+                        type="number" 
+                        min="1" 
+                        value={coopHands} 
+                        onChange={(e) => setCoopHands(Number(e.target.value))}
+                        className="bg-transparent border-none font-bold text-lg w-16 outline-none text-center"
+                     />
+                  </div>
                 </div>
-                <button 
-                  onClick={handlePayCooperative}
-                  disabled={payingCoop}
-                  className="bg-indigo-600 text-white px-6 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2"
-                >
-                  <PlusCircle size={20} />
-                  <span>{coopJoinConfirmStage ? `Pay ₦${(cooperativeHandPrice * coopHands).toLocaleString()}` : "Join Coop"}</span>
-                </button>
+                
+                <label className="flex items-start space-x-3 cursor-pointer">
+                  <div className="relative flex items-center pt-1">
+                    <input 
+                       type="checkbox"
+                       className="w-5 h-5 accent-indigo-600 rounded"
+                       checked={acceptedCoopTerms}
+                       onChange={(e) => setAcceptedCoopTerms(e.target.checked)}
+                    />
+                  </div>
+                  <span className="text-sm text-gray-600 font-medium leading-tight">
+                    I accept to join the ASYMOG Cooperative and commit to the monthly contribution of ₦{(cooperativeHandPrice * coopHands).toLocaleString()}.
+                  </span>
+                </label>
+
+                <div className="flex justify-end mt-2">
+                  <button 
+                    onClick={handlePayCooperative}
+                    disabled={payingCoop || !acceptedCoopTerms}
+                    className="bg-indigo-600 text-white px-8 py-3 rounded-xl font-bold shadow-lg hover:bg-indigo-700 transition-all flex items-center gap-2 disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    <PlusCircle size={20} />
+                    <span>{coopJoinConfirmStage ? `Pay ₦${(cooperativeHandPrice * coopHands).toLocaleString()}` : "Join Coop"}</span>
+                  </button>
+                </div>
               </div>
             ) : (
               <div className="flex flex-col items-end gap-1">
@@ -3518,10 +3599,13 @@ function DashboardPage({
         </div>
 
         <div className="grid grid-cols-1 md:grid-cols-4 gap-6 mb-8">
-           <div className="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-2xl border border-indigo-100 shadow-sm">
+           <div className="bg-gradient-to-br from-indigo-50 to-white p-6 rounded-2xl border border-indigo-100 shadow-sm relative overflow-hidden">
+              <div className="absolute top-0 right-0 p-4 opacity-5 pointer-events-none">
+                <Users size={64} />
+              </div>
               <p className="text-xs font-bold text-indigo-400 uppercase tracking-widest mb-1">Your Hands</p>
               <h4 className="text-3xl font-bold text-indigo-900">{user.cooperativeHands || 0} Unit(s)</h4>
-              <p className="text-[10px] text-indigo-400 mt-1">₦{cooperativeHandPrice?.toLocaleString()} per hand</p>
+              <p className="text-[10px] font-bold text-indigo-600 mt-2 bg-indigo-100 inline-block px-2 py-1 rounded">Total: ₦{((user.cooperativeHands || 0) * cooperativeHandPrice).toLocaleString()}/month</p>
            </div>
            <div className="bg-gradient-to-br from-red-50 to-white p-6 rounded-2xl border border-red-100 shadow-sm">
               <p className="text-xs font-bold text-red-400 uppercase tracking-widest mb-1">Grace Period</p>
@@ -5927,9 +6011,29 @@ function CooperativeManagement({ users, onUpdateUser, handPrice, graceDay, fineA
                       <p className="text-xs text-gray-500">{u.email}</p>
                     </td>
                     <td className="py-4 px-6 text-center">
-                      <span className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold font-mono">
-                        {u.cooperativeHands || 1}
-                      </span>
+                      <input 
+                        type="number"
+                        min="1"
+                        className="bg-indigo-50 text-indigo-700 px-3 py-1 rounded-full text-xs font-bold font-mono w-16 text-center outline-none border border-transparent focus:border-indigo-300"
+                        value={u.cooperativeHands || 1}
+                        onChange={async (e) => {
+                          const newHands = Number(e.target.value);
+                          if (newHands < 1) return;
+                          
+                          // Optimistic update
+                          onUpdateUser(u.email, { cooperativeHands: newHands });
+                          
+                          try {
+                            await fetch("/api/admin/update-user", {
+                              method: "POST",
+                              headers: { "Content-Type": "application/json" },
+                              body: JSON.stringify({ email: u.email, cooperativeHands: newHands })
+                            });
+                          } catch (err) {
+                            console.error("Failed to update hands", err);
+                          }
+                        }}
+                      />
                     </td>
                     <td className="py-4 px-6">
                       <p className="font-bold text-gray-800 text-sm">₦{baseDue.toLocaleString()}</p>
